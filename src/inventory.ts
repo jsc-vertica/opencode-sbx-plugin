@@ -1,8 +1,9 @@
-import type { Inventory, Sandbox } from "./model"
+import type { Inventory, SbxVersions, Sandbox } from "./model"
 import { SbxError } from "./sbx"
 
 export interface InventoryOptions {
   readonly load: () => Promise<readonly Sandbox[]>
+  readonly versions?: () => Promise<SbxVersions>
   readonly changed: () => void
   readonly signal: AbortSignal
   readonly now?: () => number
@@ -10,7 +11,9 @@ export interface InventoryOptions {
 
 /** One main-process snapshot and one in-flight command shared by every window. */
 export function createInventory(options: InventoryOptions) {
-  let state: Inventory = { sandboxes: [], refreshing: false, updatedAt: null, error: null }
+  let state: Inventory = {
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null,
+  }
   let pending: Promise<void> | undefined
   const now = options.now ?? Date.now
 
@@ -20,10 +23,17 @@ export function createInventory(options: InventoryOptions) {
 
     state = { ...state, refreshing: true }
     // Defer load until pending is assigned, including for synchronous failures.
-    pending = Promise.resolve().then(() => options.signal.aborted ? [] : options.load()).then(
-      (sandboxes) => {
+    pending = Promise.resolve().then(async () => {
+      if (options.signal.aborted) return { sandboxes: [], versions: state.versions }
+      // Versions change rarely; read them once and reuse them for later refreshes.
+      const versions = options.versions && state.versions === null
+        ? await options.versions().catch(() => null)
+        : state.versions
+      return { sandboxes: await options.load(), versions }
+    }).then(
+      (result) => {
         if (options.signal.aborted) return
-        state = { sandboxes, refreshing: false, updatedAt: now(), error: null }
+        state = { ...result, refreshing: false, updatedAt: now(), error: null }
       },
       (error: unknown) => {
         if (options.signal.aborted) return

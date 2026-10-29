@@ -1,10 +1,12 @@
 import { Ipc } from "@opencode/plugin/gui"
 import { Schema } from "effect"
 
+import type { SbxVersions } from "./model"
+
 export const Sandboxes = Ipc.define({
   // Desktop caches IPC clients/codecs by ID across GUI rebuilds. Bump this version
   // whenever methods or the state schema change, so live windows cannot reuse an old contract.
-  id: "opencode-sbx-plugin.sandboxes.v2",
+  id: "opencode-sbx-plugin.sandboxes.v3",
   state: Schema.Struct({
     sandboxes: Schema.Array(Schema.Struct({
       id: Schema.String,
@@ -14,6 +16,10 @@ export const Sandboxes = Ipc.define({
       workspaces: Schema.Array(Schema.String),
     })),
     refreshing: Schema.Boolean,
+    versions: Schema.NullOr(Schema.Struct({
+      client: Schema.NullOr(Schema.String),
+      server: Schema.NullOr(Schema.String),
+    })),
     operations: Schema.Array(Schema.Struct({
       id: Schema.String,
       action: Schema.Literals(["start", "stop"]),

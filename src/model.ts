@@ -1,3 +1,8 @@
+export interface SbxVersions {
+  readonly client: string | null
+  readonly server: string | null
+}
+
 export interface Sandbox {
   readonly id: string
   readonly name: string
@@ -40,6 +45,7 @@ export interface Inventory {
   readonly refreshing: boolean
   readonly updatedAt: number | null
   readonly error: InventoryError | null
+  readonly versions: SbxVersions | null
 }
 
 export function statusTone(status: string): "running" | "stopped" | "other" {

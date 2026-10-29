@@ -5,6 +5,27 @@ export const CLI_TIMEOUT_MS = 10_000
 export const ACTION_TIMEOUT_MS = 60_000
 export const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 
+export interface SbxVersions {
+  readonly client: string | null
+  readonly server: string | null
+}
+
+/** Extracts "v0.50.1" from CLI output, tolerating prefixes, revisions, and surrounding text. */
+export function parseVersions(output: string): SbxVersions {
+  let client: string | null = null
+  let server: string | null = null
+  for (const section of ["client", "server"] as const) {
+    const match = new RegExp(`"${section}"\\s*:\\s*\\{[^{}]*?"version"\\s*:\\s*"([^"\\s]+)"`).exec(output)
+    const version = match?.[1]?.replace(/^v/, "") ?? null
+    if (section === "client") client = version
+    else server = version
+  }
+  if (client === null && server === null) {
+    client = /v?(\d+\.\d+\.\d+)/.exec(output)?.[1] ?? null
+  }
+  return { client, server }
+}
+
 export class SbxError extends Error {
   constructor(readonly detail: InventoryError) {
     super(detail.message)
@@ -107,6 +128,10 @@ export interface ListOptions {
 
 export function listSandboxes({ executable, signal }: ListOptions): Promise<Sandbox[]> {
   return executeSbx({ executable, signal }, ["ls", "--format", "json"]).then(parseSandboxes)
+}
+
+export function readVersions(options: ListOptions): Promise<SbxVersions> {
+  return executeSbx(options, ["version", "--format", "json"]).then(parseVersions)
 }
 
 export async function changeSandbox(options: ListOptions, sandbox: Sandbox, action: SandboxAction): Promise<void> {

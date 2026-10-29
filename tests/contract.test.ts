@@ -5,13 +5,14 @@ import { Schema } from "effect"
 import { Sandboxes } from "../src/contract"
 
 test("lifecycle IPC uses a versioned identity distinct from the original read-only bridge", () => {
-  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v2")
+  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v3")
   assert.notEqual(Sandboxes.id, "opencode-sbx-plugin.sandboxes")
+  assert.notEqual(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v2")
 })
 
 test("Desktop's ID-keyed client cache cannot reuse the old read-only codecs for lifecycle controls", () => {
   const old = Ipc.define({
-    id: "opencode-sbx-plugin.sandboxes",
+    id: "opencode-sbx-plugin.sandboxes.v2",
     state: Schema.Struct({ refreshing: Schema.Boolean }),
     methods: { refresh: {} },
   })
@@ -36,6 +37,7 @@ test("the current bridge decodes lifecycle state without dropping the new operat
   const snapshot = {
     sandboxes: [{ id: "one", name: "website", status: "running", agent: "shell", workspaces: [] }],
     refreshing: false,
+    versions: { client: "0.50.1", server: "0.50.1" },
     operations: [{ id: "one", action: "stop", pending: true, error: null }],
     updatedAt: 123,
     error: null,

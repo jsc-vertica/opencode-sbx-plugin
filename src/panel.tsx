@@ -195,7 +195,14 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
           </ul>
         </Show>
         <footer class="sbx-panel__footer sbx-panel__muted">
-          Updated {updated()} · refreshes every 5s while visible
+          <p>Updated {updated()} · refreshes every 5s while visible</p>
+          <Show when={state()?.versions}>
+            {(versions) => (
+              <p>
+                sbx {versions().client ?? "unknown"}<Show when={versions().server}> · daemon {versions().server}</Show>
+              </p>
+            )}
+          </Show>
         </footer>
       </Show>
     </section>

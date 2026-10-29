@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { test, type TestContext } from "node:test"
 import { statusTone } from "../src/model"
-import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseSandboxes, SbxError } from "../src/sbx"
+import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseSandboxes, parseVersions, readVersions, SbxError } from "../src/sbx"
 
 const sample = {
   name: "website",
@@ -179,4 +179,34 @@ test("lifecycle timeouts use the longer command deadline and warn about partial 
   const error = commandError({ killed: true }, "", { timeout: ACTION_TIMEOUT_MS, failureMessage: "Failed" })
   assert.match(error.message, /60 seconds/)
   assert.match(error.message, /partially completed/)
+})
+
+test("parses client and daemon versions from sbx version --format json", () => {
+  const output = `
+    WARN: docker hub refresh lock held by another process: context deadline exceeded
+    {
+      "client": { "version": "v0.50.1", "revision": "ddb0268d7124b9cf98955d0b08ffd71a0dfcebe4" },
+      "server": { "state": "running", "version": "v0.50.1", "revision": "ddb0268d7124b9cf98955d0b08ffd71a0dfcebe4", "api_version": "0.44.0" }
+    }
+  `
+  assert.deepEqual(parseVersions(output), { client: "0.50.1", server: "0.50.1" })
+})
+
+test("falls back to a plain version string when the JSON shape is unknown", () => {
+  assert.deepEqual(parseVersions("sbx version v0.48.0 5caf923"), { client: "0.48.0", server: null })
+  assert.deepEqual(parseVersions("nothing recognizable here"), { client: null, server: null })
+})
+
+test("reads the version in detached mode without hanging on the daemon prompt", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const executable = await fixture(t, `
+    if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(["version", "--format", "json"]))}) process.exit(2)
+    process.stdout.write(${JSON.stringify(JSON.stringify({
+      client: { version: "v0.50.1", revision: "a".repeat(40) },
+      server: { state: "running", version: "v0.50.1", revision: "a".repeat(40), api_version: "0.44.0" },
+    }))})
+  `)
+  const versions = await readVersions({ executable, signal: new AbortController().signal })
+  assert.deepEqual(versions, { client: "0.50.1", server: "0.50.1" })
 })

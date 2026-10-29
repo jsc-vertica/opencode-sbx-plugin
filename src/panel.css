@@ -137,6 +137,10 @@
   margin-top: 16px;
 }
 
+.sbx-panel__footer p + p {
+  margin-top: 4px;
+}
+
 .sbx-panel__row-side {
   display: flex;
   align-items: center;
