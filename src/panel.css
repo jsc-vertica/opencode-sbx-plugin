@@ -54,11 +54,6 @@
   font-size: 12px;
 }
 
-.sbx-panel__summary {
-  margin-bottom: 12px !important;
-  font-size: 12px;
-}
-
 .sbx-panel__list,
 .sbx-panel__workspaces {
   list-style: none;
@@ -142,11 +137,20 @@
   margin-top: 16px;
 }
 
+.sbx-panel__row-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .sbx-panel__actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  margin-inline-start: auto;
+  flex-shrink: 0;
 }
 
 .sbx-panel__info {

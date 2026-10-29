@@ -82,7 +82,6 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const busy = () => requestPending() || state()?.refreshing === true
   const error = () => bridgeError() ?? state()?.error?.message
   const hasResult = () => state()?.updatedAt != null
-  const running = () => sandboxes().filter((sandbox) => statusTone(sandbox.status) === "running").length
   const updated = () => {
     const timestamp = state()?.updatedAt
     return timestamp == null ? "" : new Date(timestamp).toLocaleTimeString()
@@ -119,9 +118,6 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
       </Show>
 
       <Show when={hasResult()}>
-        <p class="sbx-panel__summary" role="status">
-          {sandboxes().length} {sandboxes().length === 1 ? "sandbox" : "sandboxes"} · {running()} running
-        </p>
         <Show when={sandboxes().length > 0} fallback={
           <div class="sbx-panel__empty">
             <ui.Icon name="cube" size="large" />
@@ -134,40 +130,42 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
               {(sandbox) => (
                 <li class="sbx-panel__card" aria-busy={!!pendingAction(sandbox.id)}>
                   <div class="sbx-panel__row">
-                    <h3 title={sandbox.name}>{sandbox.name}</h3>
-                    <span class="sbx-panel__badge" data-status={statusTone(sandbox.status)}>
-                      <span class="sbx-panel__dot" aria-hidden="true" />
-                      {statusTone(sandbox.status) === "running" ? "Running"
-                        : statusTone(sandbox.status) === "stopped" ? "Stopped" : sandbox.status}
-                    </span>
-                  </div>
-                  <div class="sbx-panel__actions" role="group" aria-label={`Controls for ${sandbox.name}`}>
-                    <button
-                      type="button"
-                      class="sbx-panel__info"
-                      aria-expanded={!!expandedInfo()[sandbox.id]}
-                      aria-controls={`${detailsPrefix}-${sandbox.id}`}
-                      onClick={() => setExpandedInfo((previous) => ({
-                        ...previous, [sandbox.id]: !previous[sandbox.id],
-                      }))}
-                    >
-                      Info
-                    </button>
-                    <Show when={pendingAction(sandbox.id) ?? sandboxAction(sandbox.status)}>
-                      {(action) => (
-                        <ui.Button
-                          size="small"
-                          variant="neutral"
-                          busy={!!pendingAction(sandbox.id)}
-                          disabled={!!error()}
-                          onClick={() => void change(sandbox.id, action())}
-                        >
-                          {pendingAction(sandbox.id)
-                            ? action() === "start" ? "Starting…" : "Stopping…"
-                            : action() === "start" ? "Start" : "Stop"}
-                        </ui.Button>
-                      )}
-                    </Show>
+                    <div class="sbx-panel__row-side">
+                      <h3 title={sandbox.name}>{sandbox.name}</h3>
+                      <span class="sbx-panel__badge" data-status={statusTone(sandbox.status)}>
+                        <span class="sbx-panel__dot" aria-hidden="true" />
+                        {statusTone(sandbox.status) === "running" ? "Running"
+                          : statusTone(sandbox.status) === "stopped" ? "Stopped" : sandbox.status}
+                      </span>
+                    </div>
+                    <div class="sbx-panel__actions" role="group" aria-label={`Controls for ${sandbox.name}`}>
+                      <button
+                        type="button"
+                        class="sbx-panel__info"
+                        aria-expanded={!!expandedInfo()[sandbox.id]}
+                        aria-controls={`${detailsPrefix}-${sandbox.id}`}
+                        onClick={() => setExpandedInfo((previous) => ({
+                          ...previous, [sandbox.id]: !previous[sandbox.id],
+                        }))}
+                      >
+                        Info
+                      </button>
+                      <Show when={pendingAction(sandbox.id) ?? sandboxAction(sandbox.status)}>
+                        {(action) => (
+                          <ui.Button
+                            size="small"
+                            variant="neutral"
+                            busy={!!pendingAction(sandbox.id)}
+                            disabled={!!error()}
+                            onClick={() => void change(sandbox.id, action())}
+                          >
+                            {pendingAction(sandbox.id)
+                              ? action() === "start" ? "Starting…" : "Stopping…"
+                              : action() === "start" ? "Start" : "Stop"}
+                          </ui.Button>
+                        )}
+                      </Show>
+                    </div>
                   </div>
                   <div
                     id={`${detailsPrefix}-${sandbox.id}`}
