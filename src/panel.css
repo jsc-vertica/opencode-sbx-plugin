@@ -124,6 +124,14 @@
   margin-top: 6px;
 }
 
+.sbx-panel__login {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
 .sbx-panel__empty {
   display: flex;
   flex-direction: column;

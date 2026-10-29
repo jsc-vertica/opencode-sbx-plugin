@@ -22,7 +22,7 @@ test("does not execute the CLI until a window asks for a refresh", () => {
   })
   assert.equal(calls, 0)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null,
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, login: null,
   })
 })
 
@@ -44,7 +44,7 @@ test("shares concurrent refreshes between windows and publishes loading/success"
   await first
   assert.equal(changes, 2)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null, login: null,
   })
 })
 
@@ -62,7 +62,7 @@ test("retains the last good inventory after failure and clears errors after reco
   failing = true
   await inventory.refresh()
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null, login: null,
     error: { code: "timeout", message: "Timed out" },
   })
   failing = false
@@ -204,4 +204,49 @@ test("a diagnostics failure does not fail the inventory refresh", async () => {
   assert.equal(inventory.state().auth, null)
   assert.deepEqual(inventory.state().sandboxes, [sandbox])
   assert.equal(inventory.state().error, null)
+})
+
+test("a signed-out refresh offers login, which clears once signed in", async () => {
+  let signedIn = false
+  const inventory = createInventory({
+    load: async () => {
+      if (!signedIn) throw new SbxError({ code: "not-signed-in", message: "Not signed in to Docker." })
+      return [sandbox]
+    },
+    changed: () => {}, signal: new AbortController().signal, now: () => 123,
+  })
+  await inventory.refresh()
+  assert.equal(inventory.state().error?.code, "not-signed-in")
+  assert.deepEqual(inventory.state().login, { url: null, code: null })
+
+  // A non-sign-in failure must not offer login.
+  inventory.setLogin(null)
+  const failing = createInventory({
+    load: async () => { throw new SbxError({ code: "timeout", message: "Timed out" }) },
+    changed: () => {}, signal: new AbortController().signal, now: () => 123,
+  })
+  await failing.refresh()
+  assert.equal(failing.state().error?.code, "timeout")
+  assert.equal(failing.state().login, null)
+
+  // After confirming in the browser, the next refresh clears the offer.
+  inventory.setLogin({ url: "https://login.docker.com/activate?user_code=KSKV-HZRV", code: "KSKV-HZRV" })
+  signedIn = true
+  await inventory.reload()
+  assert.equal(inventory.state().error, null)
+  assert.equal(inventory.state().auth === null || inventory.state().auth === "authenticated", true)
+  assert.equal(inventory.state().login, null)
+})
+
+test("setLogin publishes immediately and is visible before the next refresh", async () => {
+  let changes = 0
+  const inventory = createInventory({
+    load: async () => [], changed: () => { changes++ }, signal: new AbortController().signal,
+  })
+  const before = changes
+  inventory.setLogin({ url: null, code: null })
+  assert.equal(changes, before + 1)
+  assert.deepEqual(inventory.state().login, { url: null, code: null })
+  inventory.setLogin(null)
+  assert.equal(inventory.state().login, null)
 })

@@ -13,10 +13,15 @@ export interface InventoryOptions {
 /** One main-process snapshot and one in-flight command shared by every window. */
 export function createInventory(options: InventoryOptions) {
   let state: Inventory = {
-    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null,
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, login: null,
   }
   let pending: Promise<void> | undefined
   const now = options.now ?? Date.now
+
+  function setLogin(login: Inventory["login"]): void {
+    state = { ...state, login }
+    options.changed()
+  }
 
   function refresh(): Promise<void> {
     if (options.signal.aborted) return Promise.resolve()
@@ -25,12 +30,13 @@ export function createInventory(options: InventoryOptions) {
     state = { ...state, refreshing: true }
     // Defer load until pending is assigned, including for synchronous failures.
     pending = Promise.resolve().then(async () => {
-      if (options.signal.aborted) return { sandboxes: [], versions: state.versions, auth: state.auth }
-      // Versions change rarely; read them once and reuse them for later refreshes.
+      if (options.signal.aborted) {
+        return { sandboxes: [], versions: state.versions, auth: state.auth }
+      }
+      // Versions and authentication change rarely; read them once and reuse them for later refreshes.
       const versions = options.versions && state.versions === null
         ? await options.versions().catch(() => null)
         : state.versions
-      // Authentication changes rarely too; refresh it with the same cadence as the inventory.
       const auth = options.auth && state.auth === null
         ? await options.auth().catch(() => null)
         : state.auth
@@ -38,17 +44,27 @@ export function createInventory(options: InventoryOptions) {
     }).then(
       (result) => {
         if (options.signal.aborted) return
-        state = { ...result, refreshing: false, updatedAt: now(), error: null }
+        // A successful listing clears the sign-in offer; a failed one keeps it.
+        state = {
+          ...result,
+          refreshing: false,
+          updatedAt: now(),
+          error: null,
+          login: null,
+        }
       },
       (error: unknown) => {
         if (options.signal.aborted) return
+        const detail = error instanceof SbxError ? error.detail : {
+          code: "command-failed" as const,
+          message: "Could not refresh sandboxes. Check sbx in a terminal, then try again.",
+        }
         state = {
           ...state,
           refreshing: false,
-          error: error instanceof SbxError ? error.detail : {
-            code: "command-failed",
-            message: "Could not refresh sandboxes. Check sbx in a terminal, then try again.",
-          },
+          error: detail,
+          // Only offer sign-in for the signed-out error; other failures keep the old state.
+          login: detail.code === "not-signed-in" ? state.login ?? { url: null, code: null } : state.login,
         }
       },
     ).finally(() => {
@@ -66,5 +82,5 @@ export function createInventory(options: InventoryOptions) {
     await refresh()
   }
 
-  return { state: () => state, refresh, reload }
+  return { state: () => state, refresh, reload, setLogin }
 }

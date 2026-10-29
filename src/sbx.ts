@@ -116,6 +116,12 @@ export function commandError(error: ProcessFailure, stderr = "", options = {
   timeout: CLI_TIMEOUT_MS,
   failureMessage: "Could not list sandboxes. Run `sbx ls --format json` in a terminal to check the daemon and CLI, then refresh.",
 }): SbxError {
+  if (/not signed in|try: sbx login/i.test(stderr)) {
+    return new SbxError({
+      code: "not-signed-in",
+      message: "Not signed in to Docker. Sign in to list your sandboxes.",
+    })
+  }
   if (error.code === "ENOENT") {
     return new SbxError({
       code: "missing-cli",
@@ -162,6 +168,67 @@ export function readVersions(options: ListOptions): Promise<SbxVersions> {
 
 export function readDiagnostics(options: ListOptions): Promise<Diagnostics> {
   return executeSbx(options, ["diagnose", "--format", "json"]).then(parseDiagnostics)
+}
+
+export const LOGIN_TIMEOUT_MS = 10 * 60_000
+
+export interface LoginSession {
+  /** Browser URL to open for device confirmation; null when the CLI output was not understood. */
+  readonly url: string | null
+  /** One-time device code, e.g. "KSKV-HZRV"; null when unavailable. */
+  readonly code: string | null
+}
+
+/** Extracts the device confirmation URL and code from `sbx login` output as it appears. */
+export function parseLoginOutput(output: string): LoginSession {
+  const url = /https:\/\/login\.docker\.com\/\S*/.exec(output)?.[0] ?? null
+  const code = /confirmation code is:?\s*([A-Z0-9]{4,}-[A-Z0-9]{4,})/.exec(output)?.[1] ?? null
+  return { url, code }
+}
+
+/**
+ * Starts `sbx login` and resolves with the device confirmation URL once the CLI prints it.
+ * The promise stays pending while the CLI waits for the browser confirmation; the caller
+ * completes or cancels it through the returned controls. Never reads stdin, so the CLI
+ * cannot block on a prompt.
+ */
+export function startLogin({ executable, signal }: ListOptions, options = {
+  timeout: LOGIN_TIMEOUT_MS,
+}) {
+  let started = (url: LoginSession) => {}
+  let closed: (outcome: "confirmed" | "cancelled" | "failed") => void = () => {}
+  const session = new Promise<LoginSession>((resolve) => { started = resolve })
+  const done = new Promise<"confirmed" | "cancelled" | "failed">((resolve) => { closed = resolve })
+  const child = execFile(executable, ["login"], {
+    encoding: "utf8",
+    timeout: options.timeout,
+    maxBuffer: MAX_OUTPUT_BYTES,
+    windowsHide: true,
+    signal,
+  }, (error) => {
+    closed(error ? "failed" : "confirmed")
+  })
+  // The CLI never reads stdin here, but close it so it cannot block on a prompt either.
+  child.stdin?.end()
+  let buffer = ""
+  const forward = (chunk: unknown) => {
+    buffer += String(chunk)
+    if (buffer.includes("Waiting for authentication")) {
+      const parsed = parseLoginOutput(buffer)
+      if (parsed.url || parsed.code) {
+        child.stdout?.off("data", forwardOut)
+        child.stderr?.off("data", forwardErr)
+        started(parsed)
+      }
+    }
+  }
+  const forwardOut = (chunk: unknown) => forward(chunk)
+  const forwardErr = (chunk: unknown) => forward(chunk)
+  child.stdout?.setEncoding("utf8")
+  child.stderr?.setEncoding("utf8")
+  child.stdout?.on("data", forwardOut)
+  child.stderr?.on("data", forwardErr)
+  return { session, done }
 }
 
 export async function changeSandbox(options: ListOptions, sandbox: Sandbox, action: SandboxAction): Promise<void> {

@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { test, type TestContext } from "node:test"
 import { statusTone } from "../src/model"
-import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseDiagnostics, parseSandboxes, parseVersions, readDiagnostics, readVersions, SbxError } from "../src/sbx"
+import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseDiagnostics, parseLoginOutput, parseSandboxes, parseVersions, readDiagnostics, readVersions, SbxError, startLogin } from "../src/sbx"
 
 const sample = {
   name: "website",
@@ -246,4 +246,64 @@ test("reads diagnostics in detached mode without hanging on the daemon prompt", 
   `)
   const result = await readDiagnostics({ executable, signal: new AbortController().signal })
   assert.equal(result.auth, "authenticated")
+})
+
+test("a signed-out listing is reported as not-signed-in, not a generic failure", () => {
+  const error = commandError({ code: 1 }, "error: not signed in to Docker\n  try: sbx login")
+  assert.equal(error.detail.code, "not-signed-in")
+  assert.match(error.message, /Sign in/)
+})
+
+test("extracts the device confirmation URL and code from login output", () => {
+  const output = `
+    By logging in, you agree to our Subscription Service Agreement.
+
+    Your one-time device confirmation code is: KSKV-HZRV
+    Complete sign-in in your browser, then return to this terminal.
+    Open this URL to sign in: https://login.docker.com/activate?user_code=KSKV-HZRV
+
+    Waiting for authentication...
+  `
+  assert.deepEqual(parseLoginOutput(output), {
+    url: "https://login.docker.com/activate?user_code=KSKV-HZRV",
+    code: "KSKV-HZRV",
+  })
+  assert.deepEqual(parseLoginOutput("no device code in this output"), { url: null, code: null })
+})
+
+test("a started login surfaces the device code and resolves when the CLI exits", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const controller = new AbortController()
+  const executable = await fixture(t, `
+    console.log("Your one-time device confirmation code is: TEST-CODE")
+    console.log("Open this URL to sign in: https://login.docker.com/activate?user_code=TEST-CODE")
+    console.log("Waiting for authentication...")
+    let timer
+    process.on("message", () => {
+      clearTimeout(timer)
+      process.exit(0)
+    })
+    timer = setTimeout(() => process.exit(1), 30000)
+  `)
+  const login = startLogin({ executable, signal: controller.signal })
+  const session = await Promise.race([
+    login.session,
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 5000)),
+  ])
+  assert.notEqual(session, "timeout")
+  if (session !== "timeout") {
+    assert.equal(session.code, "TEST-CODE")
+    assert.equal(session.url, "https://login.docker.com/activate?user_code=TEST-CODE")
+  }
+  const outcome = await Promise.race([
+    (async () => {
+      // The fixture exits when the plugin stops: cancellation reports the CLI's failure, not a hang.
+      controller.abort()
+      return await login.done
+    })(),
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 5000)),
+  ])
+  assert.notEqual(outcome, "timeout")
+  assert.equal(outcome, "failed")
 })

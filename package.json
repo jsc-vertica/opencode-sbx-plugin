@@ -6,7 +6,10 @@
   "exports": {
     "./gui-experimental": "./dist/gui-experimental.cjs"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "electron": "^44.9.1",
     "solid-js": "1.9.17",
     "tsx": "^4.20.6",
     "typescript": "~5.9.3",

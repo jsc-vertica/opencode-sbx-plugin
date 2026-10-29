@@ -6,7 +6,7 @@ import type { SbxVersions } from "./model"
 export const Sandboxes = Ipc.define({
   // Desktop caches IPC clients/codecs by ID across GUI rebuilds. Bump this version
   // whenever methods or the state schema change, so live windows cannot reuse an old contract.
-  id: "opencode-sbx-plugin.sandboxes.v4",
+  id: "opencode-sbx-plugin.sandboxes.v5",
   state: Schema.Struct({
     sandboxes: Schema.Array(Schema.Struct({
       id: Schema.String,
@@ -21,6 +21,10 @@ export const Sandboxes = Ipc.define({
       server: Schema.NullOr(Schema.String),
     })),
     auth: Schema.NullOr(Schema.Literals(["authenticated", "unauthenticated", "unknown"])),
+    login: Schema.NullOr(Schema.Struct({
+      url: Schema.NullOr(Schema.String),
+      code: Schema.NullOr(Schema.String),
+    })),
     operations: Schema.Array(Schema.Struct({
       id: Schema.String,
       action: Schema.Literals(["start", "stop"]),
@@ -30,7 +34,7 @@ export const Sandboxes = Ipc.define({
     updatedAt: Schema.NullOr(Schema.Number),
     error: Schema.NullOr(Schema.Struct({
       code: Schema.Literals([
-        "missing-cli", "timeout", "daemon-restart-required", "command-failed", "invalid-output",
+        "missing-cli", "timeout", "daemon-restart-required", "command-failed", "invalid-output", "not-signed-in",
       ]),
       message: Schema.String,
     })),
@@ -38,5 +42,6 @@ export const Sandboxes = Ipc.define({
   methods: {
     refresh: {},
     change: { input: Schema.Struct({ id: Schema.String, action: Schema.Literals(["start", "stop"]) }) },
+    startLogin: {},
   },
 })

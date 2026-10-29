@@ -81,6 +81,8 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const sandboxes = () => state()?.sandboxes ?? []
   const busy = () => requestPending() || state()?.refreshing === true
   const error = () => bridgeError() ?? state()?.error?.message
+  const signedOut = () => state()?.error?.code === "not-signed-in"
+  const login = () => state()?.login ?? null
   const hasResult = () => state()?.updatedAt != null
   const updated = () => {
     const timestamp = state()?.updatedAt
@@ -103,6 +105,22 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         {(message) => (
           <div class="sbx-panel__error" role="alert">
             <p>{message()}</p>
+            <Show when={signedOut()}>
+              <div class="sbx-panel__login">
+                <ui.Button size="small" variant="contrast" busy={!!login()} onClick={() => void client.startLogin({ signal: lifetime.signal }).catch(() => {})}>
+                  {login() ? "Waiting for sign-in…" : "Sign in to Docker"}
+                </ui.Button>
+                <Show when={login()}>
+                  {(session) => (
+                    <p class="sbx-panel__muted">
+                      <Show when={session().code} fallback="Complete the sign-in in your browser.">
+                        Device code <strong>{session().code}</strong> — confirm in the opened browser tab.
+                      </Show>
+                    </p>
+                  )}
+                </Show>
+              </div>
+            </Show>
             <Show when={hasResult()}>
               <p class="sbx-panel__muted">Showing the last successful result; statuses may be out of date.</p>
             </Show>

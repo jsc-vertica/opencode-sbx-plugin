@@ -40,6 +40,7 @@ export type InventoryErrorCode =
   | "daemon-restart-required"
   | "command-failed"
   | "invalid-output"
+  | "not-signed-in"
 
 export interface InventoryError {
   readonly code: InventoryErrorCode
@@ -53,6 +54,7 @@ export interface Inventory {
   readonly error: InventoryError | null
   readonly versions: SbxVersions | null
   readonly auth: AuthState | null
+  readonly login: { readonly url: string | null; readonly code: string | null } | null
 }
 
 export function statusTone(status: string): "running" | "stopped" | "other" {

@@ -5,10 +5,10 @@ import { Schema } from "effect"
 import { Sandboxes } from "../src/contract"
 
 test("lifecycle IPC uses a versioned identity distinct from the original read-only bridge", () => {
-  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v4")
-  assert.notEqual(Sandboxes.id, "opencode-sbx-plugin.sandboxes")
-  assert.notEqual(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v2")
-  assert.notEqual(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v3")
+  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v5")
+  for (const previous of ["", ".v2", ".v3", ".v4"]) {
+    assert.notEqual(Sandboxes.id, `opencode-sbx-plugin.sandboxes${previous}`)
+  }
 })
 
 test("Desktop's ID-keyed client cache cannot reuse the old read-only codecs for lifecycle controls", () => {
@@ -30,7 +30,7 @@ test("Desktop's ID-keyed client cache cannot reuse the old read-only codecs for 
   const after = client(Sandboxes)
   assert.notEqual(after, before)
   assert.deepEqual(before.methods, ["refresh"])
-  assert.deepEqual(after.methods, ["refresh", "change"])
+  assert.deepEqual(after.methods, ["refresh", "change", "startLogin"])
   assert.equal(after.state, Sandboxes.spec.state)
 })
 
@@ -40,6 +40,7 @@ test("the current bridge decodes lifecycle state without dropping the new operat
     refreshing: false,
     versions: { client: "0.50.1", server: "0.50.1" },
     auth: "authenticated",
+    login: null,
     operations: [{ id: "one", action: "stop", pending: true, error: null }],
     updatedAt: 123,
     error: null,
