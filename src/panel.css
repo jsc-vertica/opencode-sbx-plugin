@@ -141,6 +141,14 @@
   margin-top: 4px;
 }
 
+.sbx-panel__auth[data-auth="authenticated"] {
+  color: #30a46c;
+}
+
+.sbx-panel__auth[data-auth="unauthenticated"] {
+  color: #d3a33c;
+}
+
 .sbx-panel__row-side {
   display: flex;
   align-items: center;

@@ -195,7 +195,17 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
           </ul>
         </Show>
         <footer class="sbx-panel__footer sbx-panel__muted">
-          <p>Updated {updated()} · refreshes every 5s while visible</p>
+          <p>
+            Updated {updated()} · refreshes every 5s while visible
+            <Show when={state()?.auth} fallback={<span> · authentication unknown</span>}>
+              {(auth) => (
+                <span
+                  class="sbx-panel__auth"
+                  data-auth={auth()}
+                >{auth() === "authenticated" ? " · signed in" : auth() === "unauthenticated" ? " · signed out" : " · authentication unknown"}</span>
+              )}
+            </Show>
+          </p>
           <Show when={state()?.versions}>
             {(versions) => (
               <p>

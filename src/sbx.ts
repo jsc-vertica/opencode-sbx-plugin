@@ -10,6 +10,32 @@ export interface SbxVersions {
   readonly server: string | null
 }
 
+export type AuthState = "authenticated" | "unauthenticated" | "unknown"
+
+export interface Diagnostics {
+  readonly auth: AuthState
+}
+
+/**
+ * Reads the Authentication check from `sbx diagnose --format json`.
+ * Only a passing "authenticated" report counts as signed in; failures, skips,
+ * and unknown check names are all reported as unknown rather than signed out.
+ */
+export function parseDiagnostics(output: string): Diagnostics {
+  let value: unknown
+  try {
+    value = JSON.parse(output)
+  } catch {
+    return { auth: "unknown" }
+  }
+  if (!record(value) || !Array.isArray(value.checks)) return { auth: "unknown" }
+  const check = value.checks.find((item: unknown) => record(item) && item.name === "Authentication")
+  if (!record(check) || check.status !== "pass") return { auth: "unknown" }
+  return { auth: /not authenticated|signed out|logged out/i.test(String(check.message))
+    ? "unauthenticated"
+    : "authenticated" }
+}
+
 /** Extracts "v0.50.1" from CLI output, tolerating prefixes, revisions, and surrounding text. */
 export function parseVersions(output: string): SbxVersions {
   let client: string | null = null
@@ -132,6 +158,10 @@ export function listSandboxes({ executable, signal }: ListOptions): Promise<Sand
 
 export function readVersions(options: ListOptions): Promise<SbxVersions> {
   return executeSbx(options, ["version", "--format", "json"]).then(parseVersions)
+}
+
+export function readDiagnostics(options: ListOptions): Promise<Diagnostics> {
+  return executeSbx(options, ["diagnose", "--format", "json"]).then(parseDiagnostics)
 }
 
 export async function changeSandbox(options: ListOptions, sandbox: Sandbox, action: SandboxAction): Promise<void> {

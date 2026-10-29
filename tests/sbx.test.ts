@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { test, type TestContext } from "node:test"
 import { statusTone } from "../src/model"
-import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseSandboxes, parseVersions, readVersions, SbxError } from "../src/sbx"
+import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseDiagnostics, parseSandboxes, parseVersions, readDiagnostics, readVersions, SbxError } from "../src/sbx"
 
 const sample = {
   name: "website",
@@ -209,4 +209,41 @@ test("reads the version in detached mode without hanging on the daemon prompt", 
   `)
   const versions = await readVersions({ executable, signal: new AbortController().signal })
   assert.deepEqual(versions, { client: "0.50.1", server: "0.50.1" })
+})
+
+const authenticatedReport = JSON.stringify({
+  version: "1.0",
+  checks: [
+    { name: "Daemon", status: "pass", message: "healthy", detail: "version v0.50.1", hint: "" },
+    { name: "Authentication", status: "pass", message: "authenticated", detail: "", hint: "" },
+  ],
+  summary: { pass: 2, warn: 0, fail: 0, skip: 0 },
+})
+
+test("reads the signed-in state from the diagnose report's Authentication check", () => {
+  assert.equal(parseDiagnostics(authenticatedReport).auth, "authenticated")
+  assert.equal(parseDiagnostics(authenticatedReport.replace("authenticated", "not authenticated")).auth, "unauthenticated")
+  assert.equal(parseDiagnostics(authenticatedReport.replace("authenticated", "signed out")).auth, "unauthenticated")
+})
+
+test("a failing, skipped, or missing Authentication check is unknown, never signed out", () => {
+  for (const status of ["fail", "warn", "skip"]) {
+    const report = JSON.stringify({ checks: [{ name: "Authentication", status, message: "could not check", detail: "", hint: "" }] })
+    assert.equal(parseDiagnostics(report).auth, "unknown")
+  }
+  assert.equal(parseDiagnostics(JSON.stringify({ checks: [{ name: "Daemon", status: "pass", message: "healthy" }] })).auth, "unknown")
+  assert.equal(parseDiagnostics(JSON.stringify({ checks: [] })).auth, "unknown")
+  assert.equal(parseDiagnostics("not json at all").auth, "unknown")
+  assert.equal(parseDiagnostics(JSON.stringify({ checks: "wrong shape" })).auth, "unknown")
+})
+
+test("reads diagnostics in detached mode without hanging on the daemon prompt", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const executable = await fixture(t, `
+    if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(["diagnose", "--format", "json"]))}) process.exit(2)
+    process.stdout.write(${JSON.stringify(authenticatedReport)})
+  `)
+  const result = await readDiagnostics({ executable, signal: new AbortController().signal })
+  assert.equal(result.auth, "authenticated")
 })

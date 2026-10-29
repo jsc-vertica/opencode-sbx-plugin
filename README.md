@@ -53,7 +53,7 @@ Rebuilt local bundles reload automatically. **Settings → Extensions → Plugin
 
 The IPC contract ID in `src/contract.ts` is versioned. When changing bridge methods or the state schema, bump its version: Desktop 2.2.2 retains IPC clients/codecs by ID across GUI rebuilds. Reusing an old ID can leave a newly loaded panel connected through an outdated schema.
 
-The footer shows the sbx CLI and daemon versions, read once via `sbx version --format json` and reused across refreshes.
+The footer shows the sbx CLI and daemon versions, read once via `sbx version --format json` and reused across refreshes. It also shows whether sbx is signed in, read once from the Authentication check of `sbx diagnose --format json`. Only a passing "authenticated" report counts as signed in; a failed or missing check shows "authentication unknown" rather than "signed out".
 
 ### Custom sbx executable
 

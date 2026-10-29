@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createInventory } from "../src/inventory"
-import type { Sandbox, SbxVersions } from "../src/model"
+import type { AuthState, Sandbox, SbxVersions } from "../src/model"
 import { SbxError } from "../src/sbx"
 
 const sandbox: Sandbox = {
@@ -22,7 +22,7 @@ test("does not execute the CLI until a window asks for a refresh", () => {
   })
   assert.equal(calls, 0)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null,
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null,
   })
 })
 
@@ -44,7 +44,7 @@ test("shares concurrent refreshes between windows and publishes loading/success"
   await first
   assert.equal(changes, 2)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null,
   })
 })
 
@@ -62,7 +62,7 @@ test("retains the last good inventory after failure and clears errors after reco
   failing = true
   await inventory.refresh()
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null,
     error: { code: "timeout", message: "Timed out" },
   })
   failing = false
@@ -175,6 +175,33 @@ test("a version failure does not fail the inventory refresh", async () => {
   await inventory.refresh()
   assert.equal(versionCalls, 1)
   assert.equal(inventory.state().versions, null)
+  assert.deepEqual(inventory.state().sandboxes, [sandbox])
+  assert.equal(inventory.state().error, null)
+})
+
+test("reads the authentication state once and reuses it for later refreshes", async () => {
+  let authCalls = 0
+  const inventory = createInventory({
+    load: async () => [],
+    auth: async () => { authCalls++; return "authenticated" as AuthState },
+    changed: () => {}, signal: new AbortController().signal, now: () => 123,
+  })
+  await inventory.refresh()
+  await inventory.refresh()
+  assert.equal(authCalls, 1)
+  assert.equal(inventory.state().auth, "authenticated")
+})
+
+test("a diagnostics failure does not fail the inventory refresh", async () => {
+  let authCalls = 0
+  const inventory = createInventory({
+    load: async () => [sandbox],
+    auth: async () => { authCalls++; throw new Error("diagnose unavailable") },
+    changed: () => {}, signal: new AbortController().signal, now: () => 123,
+  })
+  await inventory.refresh()
+  assert.equal(authCalls, 1)
+  assert.equal(inventory.state().auth, null)
   assert.deepEqual(inventory.state().sandboxes, [sandbox])
   assert.equal(inventory.state().error, null)
 })

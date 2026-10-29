@@ -3,6 +3,12 @@ export interface SbxVersions {
   readonly server: string | null
 }
 
+export type AuthState = "authenticated" | "unauthenticated" | "unknown"
+
+export interface Diagnostics {
+  readonly auth: AuthState
+}
+
 export interface Sandbox {
   readonly id: string
   readonly name: string
@@ -46,6 +52,7 @@ export interface Inventory {
   readonly updatedAt: number | null
   readonly error: InventoryError | null
   readonly versions: SbxVersions | null
+  readonly auth: AuthState | null
 }
 
 export function statusTone(status: string): "running" | "stopped" | "other" {

@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin/gui"
 import { Sandboxes } from "./contract"
 import { createInventory } from "./inventory"
 import { createSandboxActions } from "./actions"
-import { changeSandbox, listSandboxes, readVersions } from "./sbx"
+import { changeSandbox, listSandboxes, readDiagnostics, readVersions } from "./sbx"
 
 export const main: Plugin.MainSetup = (ctx) => {
   const executable = typeof ctx.options.sbxPath === "string" && ctx.options.sbxPath.trim()
@@ -12,6 +12,7 @@ export const main: Plugin.MainSetup = (ctx) => {
   const inventory = createInventory({
     load: () => listSandboxes({ executable, signal: ctx.signal }),
     versions: () => readVersions({ executable, signal: ctx.signal }),
+    auth: () => readDiagnostics({ executable, signal: ctx.signal }).then((result) => result.auth),
     signal: ctx.signal,
     changed: () => provider.changed(),
   })
