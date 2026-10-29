@@ -1,7 +1,8 @@
 import type { Plugin } from "@opencode/plugin/gui"
 import { Sandboxes } from "./contract"
 import { createInventory } from "./inventory"
-import { listSandboxes } from "./sbx"
+import { createSandboxActions } from "./actions"
+import { changeSandbox, listSandboxes } from "./sbx"
 
 export const main: Plugin.MainSetup = (ctx) => {
   const executable = typeof ctx.options.sbxPath === "string" && ctx.options.sbxPath.trim()
@@ -14,8 +15,17 @@ export const main: Plugin.MainSetup = (ctx) => {
     changed: () => provider.changed(),
   })
 
+  const actions = createSandboxActions({
+    load: () => listSandboxes({ executable, signal: ctx.signal }),
+    execute: (sandbox, action) => changeSandbox({ executable, signal: ctx.signal }, sandbox, action),
+    refresh: () => inventory.reload(),
+    signal: ctx.signal,
+    changed: () => provider.changed(),
+  })
+
   const provider = ctx.provide(Sandboxes, {
-    state: () => inventory.state(),
+    state: () => ({ ...inventory.state(), operations: actions.state() }),
     refresh: () => inventory.refresh(),
+    change: ({ id, action }) => actions.change(id, action),
   })
 }

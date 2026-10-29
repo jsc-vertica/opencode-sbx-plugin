@@ -1,7 +1,7 @@
 {
   "name": "opencode-sbx-plugin",
   "version": "0.1.0",
-  "description": "A read-only Docker Sandboxes side panel for OpenCode Desktop.",
+  "description": "A Docker Sandboxes side panel with start/stop controls for OpenCode Desktop.",
   "type": "module",
   "exports": {
     "./gui-experimental": "./dist/gui-experimental.cjs"

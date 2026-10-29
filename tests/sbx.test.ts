@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { test, type TestContext } from "node:test"
 import { statusTone } from "../src/model"
-import { commandError, listSandboxes, parseSandboxes, SbxError } from "../src/sbx"
+import { ACTION_TIMEOUT_MS, changeSandbox, commandError, listSandboxes, parseSandboxes, SbxError } from "../src/sbx"
 
 const sample = {
   name: "website",
@@ -141,4 +141,42 @@ test("cancels a running CLI process when the plugin stops", {
   const timer = setTimeout(() => controller.abort(reason), 100)
   t.after(() => clearTimeout(timer))
   await assert.rejects(result, (error: unknown) => error === reason)
+})
+
+test("starts by name in detached mode without opening an agent session", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const name = "sandbox with spaces; $(not-a-shell-command)"
+  const expected = ["run", "--detach", "--name", name]
+  const executable = await fixture(t, `
+    if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(expected))}) process.exit(2)
+    process.stdout.write("sandbox-id\\n")
+  `)
+  await changeSandbox({ executable, signal: new AbortController().signal }, { ...sample, name }, "start")
+})
+
+test("stops exactly one sandbox and separates a flag-like name from options", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const name = "--all; $(not-a-shell-command)"
+  const expected = ["stop", "--", name]
+  const executable = await fixture(t, `
+    if (JSON.stringify(process.argv.slice(2)) !== ${JSON.stringify(JSON.stringify(expected))}) process.exit(2)
+  `)
+  await changeSandbox({ executable, signal: new AbortController().signal }, { ...sample, name }, "stop")
+})
+
+test("lifecycle failures describe the attempted operation, not a listing failure", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const executable = await fixture(t, 'process.stderr.write("private CLI details"); process.exitCode = 1')
+  await assert.rejects(changeSandbox({ executable, signal: new AbortController().signal }, sample, "stop"),
+    (error: unknown) => error instanceof SbxError && /Could not stop/.test(error.message)
+      && !error.message.includes("private"))
+})
+
+test("lifecycle timeouts use the longer command deadline and warn about partial completion", () => {
+  const error = commandError({ killed: true }, "", { timeout: ACTION_TIMEOUT_MS, failureMessage: "Failed" })
+  assert.match(error.message, /60 seconds/)
+  assert.match(error.message, /partially completed/)
 })

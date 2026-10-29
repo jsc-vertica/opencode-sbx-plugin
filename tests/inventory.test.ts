@@ -131,3 +131,20 @@ test("does not start a queued command if the plugin stops before it runs", async
   await result
   assert.equal(calls, 0)
 })
+
+test("a post-action reload waits for an older listing and then fetches a fresh snapshot", async () => {
+  const old = deferred<readonly Sandbox[]>()
+  let calls = 0
+  const inventory = createInventory({
+    load: () => ++calls === 1 ? old.promise : Promise.resolve([{ ...sandbox, status: "stopped" }]),
+    changed: () => {}, signal: new AbortController().signal,
+  })
+  const refreshing = inventory.refresh()
+  const reloading = inventory.reload()
+  await Promise.resolve()
+  assert.equal(calls, 1)
+  old.resolve([sandbox])
+  await Promise.all([refreshing, reloading])
+  assert.equal(calls, 2)
+  assert.equal(inventory.state().sandboxes[0]?.status, "stopped")
+})

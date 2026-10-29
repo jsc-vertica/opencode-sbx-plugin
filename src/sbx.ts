@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process"
-import type { InventoryError, Sandbox } from "./model"
+import type { InventoryError, Sandbox, SandboxAction } from "./model"
 
 export const CLI_TIMEOUT_MS = 10_000
+export const ACTION_TIMEOUT_MS = 60_000
 export const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 
 export class SbxError extends Error {
@@ -64,7 +65,10 @@ interface ProcessFailure {
   name?: string
 }
 
-export function commandError(error: ProcessFailure, stderr = ""): SbxError {
+export function commandError(error: ProcessFailure, stderr = "", options = {
+  timeout: CLI_TIMEOUT_MS,
+  failureMessage: "Could not list sandboxes. Run `sbx ls --format json` in a terminal to check the daemon and CLI, then refresh.",
+}): SbxError {
   if (error.code === "ENOENT") {
     return new SbxError({
       code: "missing-cli",
@@ -80,7 +84,7 @@ export function commandError(error: ProcessFailure, stderr = ""): SbxError {
   if (error.killed) {
     return new SbxError({
       code: "timeout",
-      message: "sbx did not respond within 10 seconds. Check Docker Sandboxes in a terminal, then refresh.",
+      message: `sbx did not respond within ${options.timeout / 1000} seconds. The command may have partially completed; refresh to check the sandbox status before retrying.`,
     })
   }
   if (/needs to restart|cannot prompt for restart|client.*server.*version mismatch/i.test(stderr)) {
@@ -92,7 +96,7 @@ export function commandError(error: ProcessFailure, stderr = ""): SbxError {
   // Keep raw stderr out of the UI/logs: it can contain local paths or other sensitive details.
   return new SbxError({
     code: "command-failed",
-    message: "Could not list sandboxes. Run `sbx ls --format json` in a terminal to check the daemon and CLI, then refresh.",
+    message: options.failureMessage,
   })
 }
 
@@ -102,10 +106,28 @@ export interface ListOptions {
 }
 
 export function listSandboxes({ executable, signal }: ListOptions): Promise<Sandbox[]> {
+  return executeSbx({ executable, signal }, ["ls", "--format", "json"]).then(parseSandboxes)
+}
+
+export async function changeSandbox(options: ListOptions, sandbox: Sandbox, action: SandboxAction): Promise<void> {
+  const args = action === "start"
+    ? ["run", "--detach", "--name", sandbox.name]
+    : ["stop", "--", sandbox.name]
+  await executeSbx(options, args, {
+    timeout: ACTION_TIMEOUT_MS,
+    failureMessage: `Could not ${action} the sandbox. Check sbx in a terminal, then refresh to check its status before retrying.`,
+  })
+}
+
+function executeSbx(
+  { executable, signal }: ListOptions,
+  args: string[],
+  options?: { timeout: number; failureMessage: string },
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(executable, ["ls", "--format", "json"], {
+    const child = execFile(executable, args, {
       encoding: "utf8",
-      timeout: CLI_TIMEOUT_MS,
+      timeout: options?.timeout ?? CLI_TIMEOUT_MS,
       maxBuffer: MAX_OUTPUT_BYTES,
       windowsHide: true,
       signal,
@@ -115,14 +137,12 @@ export function listSandboxes({ executable, signal }: ListOptions): Promise<Sand
         return
       }
       if (error) {
-        reject(commandError(error, stderr))
+        reject(commandError(error, stderr, options))
         return
       }
-      try {
-        resolve(parseSandboxes(stdout))
-      } catch (error) {
-        reject(error)
-      }
+      resolve(stdout)
     })
+    // Lifecycle actions must never wait for interactive input.
+    child.stdin?.end()
   })
 }

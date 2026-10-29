@@ -44,5 +44,12 @@ export function createInventory(options: InventoryOptions) {
     return pending
   }
 
-  return { state: () => state, refresh }
+  async function reload(): Promise<void> {
+    // An action may finish while a pre-action listing is still in flight.
+    // Wait for that listing, then request a fresh post-action snapshot.
+    await pending
+    await refresh()
+  }
+
+  return { state: () => state, refresh, reload }
 }

@@ -6,6 +6,23 @@ export interface Sandbox {
   readonly workspaces: readonly string[]
 }
 
+export type SandboxAction = "start" | "stop"
+
+export interface SandboxOperation {
+  readonly id: string
+  readonly action: SandboxAction
+  readonly pending: boolean
+  readonly error: string | null
+}
+
+export function sandboxAction(status: string): SandboxAction | null {
+  switch (statusTone(status)) {
+    case "running": return "stop"
+    case "stopped": return "start"
+    default: return null
+  }
+}
+
 export type InventoryErrorCode =
   | "missing-cli"
   | "timeout"

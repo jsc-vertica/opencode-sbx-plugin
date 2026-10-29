@@ -2,6 +2,7 @@ import { Command, MenuItem, Panel, Style, type PanelTab, type Plugin } from "@op
 import { SandboxPanel } from "./panel"
 import { openSandboxes } from "./navigation"
 import css from "./panel.css?inline"
+import { ErrorBoundary } from "solid-js"
 
 export const setup: Plugin.Setup = (ctx) => {
   const key = `${ctx.id}:sandboxes`
@@ -12,12 +13,26 @@ export const setup: Plugin.Setup = (ctx) => {
     fallback: true,
   }
 
+  function View(props: { readonly visible: () => boolean }) {
+    const ui = ctx.ui
+    return (
+      <ErrorBoundary fallback={(_error, reset) => (
+        <section class="sbx-panel" role="alert">
+          <p>Docker Sandboxes could not render. Try again, or reload the plugin in Settings → Extensions → Plugins.</p>
+          <ui.Button size="small" onClick={reset}>Try again</ui.Button>
+        </section>
+      )}>
+        <SandboxPanel visible={props.visible} />
+      </ErrorBoundary>
+    )
+  }
+
   function open() {
     openSandboxes(ctx, key, () => {
       const ui = ctx.ui
       ctx.dialogs.open(() => (
         <ui.Dialog title="Docker Sandboxes" size="large">
-          <SandboxPanel visible={() => true} />
+          <View visible={() => true} />
         </ui.Dialog>
       ))
     })
@@ -35,7 +50,7 @@ export const setup: Plugin.Setup = (ctx) => {
     },
     list: (input) => input.open.includes(tab.id) ? [tab] : [],
     render: (props) => (
-      <SandboxPanel visible={() => ctx.layout.narrow() || ctx.layout.state(key, props.session) === "visible"} />
+      <View visible={() => ctx.layout.narrow() || ctx.layout.state(key, props.session) === "visible"} />
     ),
   })
   ctx.add(Command, (): Command => ({

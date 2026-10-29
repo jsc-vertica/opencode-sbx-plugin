@@ -1,6 +1,6 @@
 # OpenCode Docker Sandboxes
 
-A read-only **Docker Sandboxes** side panel for OpenCode Desktop. Lists local sandboxes, their running/stopped status, agent, and workspaces using `sbx ls --format json`.
+A **Docker Sandboxes** side panel for OpenCode Desktop. Lists local sandboxes, their running/stopped status, agent, and workspaces using `sbx ls --format json`, with buttons to start and stop existing sandboxes.
 
 ## Requirements
 
@@ -51,6 +51,8 @@ npm run dev
 
 Rebuilt local bundles reload automatically. **Settings → Extensions → Plugins** shows whether the GUI loaded and lets you disable it. This project does not modify your global configuration automatically.
 
+The IPC contract ID in `src/contract.ts` is versioned. When changing bridge methods or the state schema, bump its version: Desktop 2.2.2 retains IPC clients/codecs by ID across GUI rebuilds. Reusing an old ID can leave a newly loaded panel connected through an outdated schema.
+
 ### Custom sbx executable
 
 Desktop may inherit a different `PATH` than your terminal. Set an absolute executable path if needed:
@@ -72,10 +74,13 @@ Desktop may inherit a different `PATH` than your terminal. Set an absolute execu
 ## Behavior
 
 - Lists **local** sandboxes on the machine running Desktop, even for sessions connected to a remote OpenCode server. It does not pass `--cloud`.
+- Keeps cards compact: agent and workspace details are hidden until you toggle **Info**. The expanded state is preserved across automatic refreshes while the panel stays mounted.
 - Refreshes on opening/showing the panel, every five seconds while visible, and on **Refresh**. Polling pauses when the panel or app document is hidden.
 - All Desktop windows share a main-process snapshot. Simultaneous refresh requests share one CLI invocation.
-- Does not start, stop, create, or delete sandboxes. As with running `sbx ls` yourself, the CLI may initialize its daemon.
-- Uses an asynchronous child process without a shell, with a ten-second timeout and a bounded output buffer. Disabling/reloading the plugin cancels an active command.
+- Shows **Start** for stopped sandboxes and **Stop** for running ones. Start uses `sbx run --detach --name NAME` without opening an interactive agent session; Stop uses `sbx stop -- NAME` and retains the sandbox. **Stopping interrupts any active work in that sandbox.**
+- Rechecks the sandbox ID and status against a fresh listing before an action. Duplicate clicks across windows share one operation; stale clicks never toggle in the opposite direction. Unknown/transitional statuses have no action button, and stale inventories disable controls until a successful refresh.
+- Shows a busy button during each operation, reports failures on that sandbox's card, and refreshes the inventory afterward. There are no create or delete controls. As with running `sbx ls` yourself, listing may initialize its daemon.
+- Uses asynchronous child processes without a shell, with a ten-second listing timeout, a sixty-second start/stop timeout, and bounded output buffers. Disabling/reloading the plugin cancels active commands. A timed-out lifecycle command may have partially completed; refresh to check status before retrying.
 - Unknown statuses are displayed verbatim, not treated as stopped. Empty inventories and CLI failures are distinct states.
 - After a failed refresh, the last successful inventory remains visible with a stale-data warning. Raw CLI stderr and sandbox paths are not written to logs.
 
@@ -89,4 +94,4 @@ npm test
 npm run build
 ```
 
-Tests cover JSON parsing, status classification, error reporting, process execution/cancellation, shared refreshes, and retaining the last successful inventory after errors. A live Desktop UI smoke test is still required: load the plugin, open/close it, hide/show the app, switch sessions, and verify refresh behavior. Test in both light and dark themes.
+Tests cover JSON parsing, status classification, error reporting, process execution/cancellation, shared refreshes, retaining the last successful inventory after errors, and start/stop validation, locking, and CLI arguments. Lifecycle tests use fake commands and do not start or stop real sandboxes. For a live smoke test, load the plugin, open/close it, hide/show the app, switch sessions, and verify refresh behavior. Test in both light and dark themes; use a disposable sandbox to verify start/stop controls.
