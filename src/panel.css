@@ -132,6 +132,35 @@
   align-items: flex-start;
 }
 
+.sbx-panel__policy {
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.sbx-panel__policy legend {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.sbx-panel__policy-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.sbx-panel__policy-option input {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.sbx-panel__policy-option span span {
+  display: block;
+}
+
 .sbx-panel__empty {
   display: flex;
   flex-direction: column;

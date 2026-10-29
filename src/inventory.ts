@@ -1,10 +1,10 @@
-import type { AuthState, Inventory, SbxVersions, Sandbox } from "./model"
+import type { Diagnostics, Inventory, SbxVersions, Sandbox } from "./model"
 import { SbxError } from "./sbx"
 
 export interface InventoryOptions {
   readonly load: () => Promise<readonly Sandbox[]>
   readonly versions?: () => Promise<SbxVersions>
-  readonly auth?: () => Promise<AuthState>
+  readonly diagnostics?: () => Promise<Diagnostics>
   readonly changed: () => void
   readonly signal: AbortSignal
   readonly now?: () => number
@@ -13,9 +13,10 @@ export interface InventoryOptions {
 /** One main-process snapshot and one in-flight command shared by every window. */
 export function createInventory(options: InventoryOptions) {
   let state: Inventory = {
-    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, login: null,
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, networkPolicy: null, login: null,
   }
   let pending: Promise<void> | undefined
+  let diagnosticsStale = true
   const now = options.now ?? Date.now
 
   function setLogin(login: Inventory["login"]): void {
@@ -31,16 +32,21 @@ export function createInventory(options: InventoryOptions) {
     // Defer load until pending is assigned, including for synchronous failures.
     pending = Promise.resolve().then(async () => {
       if (options.signal.aborted) {
-        return { sandboxes: [], versions: state.versions, auth: state.auth }
+        return { sandboxes: [], versions: state.versions, auth: state.auth, networkPolicy: state.networkPolicy }
       }
-      // Versions and authentication change rarely; read them once and reuse them for later refreshes.
+      // Reuse initialized diagnostics during normal polling, but recheck after
+      // login/actions and while setup is missing (including external CLI setup).
       const versions = options.versions && state.versions === null
         ? await options.versions().catch(() => null)
         : state.versions
-      const auth = options.auth && state.auth === null
-        ? await options.auth().catch(() => null)
-        : state.auth
-      return { sandboxes: await options.load(), versions, auth }
+      const diagnostics = options.diagnostics && (diagnosticsStale || state.networkPolicy !== "initialized")
+        ? await options.diagnostics().catch(() => null)
+        : null
+      if (options.signal.aborted) return { sandboxes: [], versions, auth: state.auth, networkPolicy: state.networkPolicy }
+      if (diagnostics) diagnosticsStale = false
+      // Diagnostics must survive a failed listing, e.g. immediately after login.
+      state = { ...state, versions, ...(diagnostics ?? {}) }
+      return { sandboxes: await options.load(), versions, auth: state.auth, networkPolicy: state.networkPolicy }
     }).then(
       (result) => {
         if (options.signal.aborted) return
@@ -63,8 +69,10 @@ export function createInventory(options: InventoryOptions) {
           ...state,
           refreshing: false,
           error: detail,
-          // Only offer sign-in for the signed-out error; other failures keep the old state.
-          login: detail.code === "not-signed-in" ? state.login ?? { url: null, code: null } : state.login,
+          networkPolicy: detail.code === "network-policy-required" ? "required" : state.networkPolicy,
+          // The error code offers sign-in; only startLogin may mark a flow as
+          // pending. Inventing a session here disables the button before a click.
+          login: state.login,
         }
       },
     ).finally(() => {
@@ -79,6 +87,7 @@ export function createInventory(options: InventoryOptions) {
     // An action may finish while a pre-action listing is still in flight.
     // Wait for that listing, then request a fresh post-action snapshot.
     await pending
+    diagnosticsStale = true
     await refresh()
   }
 

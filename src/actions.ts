@@ -32,8 +32,9 @@ export function createSandboxActions(options: ActionOptions) {
       if (!sandbox) throw new ActionError("This sandbox no longer exists. Refresh the inventory before trying again.")
       const available = sandboxAction(sandbox.status)
       if (!available) throw new ActionError("This sandbox is not running or stopped. Refresh to check its status before trying again.")
-      // A stale click must never toggle a sandbox back in the opposite direction.
-      if (available === action) await options.execute(sandbox, action)
+      // Repair deliberately re-runs setup even on a running sandbox. Ordinary
+      // stale start/stop clicks must still never toggle it in the other direction.
+      if (action === "repair" || available === action) await options.execute(sandbox, action)
     }).catch((error: unknown) => {
       if (options.signal.aborted) return
       message = error instanceof SbxError ? error.detail.message

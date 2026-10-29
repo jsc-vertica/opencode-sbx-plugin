@@ -1,9 +1,14 @@
 import { usePlugin } from "@opencode/plugin/gui"
 import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, untrack } from "solid-js"
 import { Sandboxes } from "./contract"
-import { sandboxAction, statusTone, type SandboxAction } from "./model"
+import { sandboxAction, statusTone, type NetworkPolicyPreset, type SandboxAction } from "./model"
 
 const REFRESH_INTERVAL_MS = 5_000
+const POLICY_PRESETS: readonly { id: NetworkPolicyPreset; title: string; description: string }[] = [
+  { id: "balanced", title: "Balanced (recommended)", description: "Allow common AI services, package registries, and development services; other destinations require approval." },
+  { id: "allow-all", title: "Allow all", description: "Allow all outbound TCP traffic. This is the least restrictive preset." },
+  { id: "deny-all", title: "Deny all (Locked Down)", description: "No baseline allow rules. Destinations need your approval or an allow rule from you or a kit." },
+]
 
 export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const ctx = usePlugin()
@@ -16,6 +21,9 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const [localActions, setLocalActions] = createSignal<Record<string, SandboxAction | undefined>>({})
   const [actionErrors, setActionErrors] = createSignal<Record<string, string | undefined>>({})
   const [expandedInfo, setExpandedInfo] = createSignal<Record<string, boolean | undefined>>({})
+  const [selectedPolicy, setSelectedPolicy] = createSignal<NetworkPolicyPreset | null>(null)
+  const [policyRequestPending, setPolicyRequestPending] = createSignal(false)
+  const [policyError, setPolicyError] = createSignal<string | null>(null)
   const detailsPrefix = createUniqueId()
   let pending: Promise<void> | undefined
 
@@ -62,6 +70,7 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
 
   async function change(id: string, action: SandboxAction): Promise<void> {
     if (pendingAction(id) || error()) return
+    if (action !== "stop" && (policyRequired() || policyBusy())) return
     setLocalActions((previous) => ({ ...previous, [id]: action }))
     setActionErrors((previous) => ({ ...previous, [id]: undefined }))
     try {
@@ -83,6 +92,22 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const error = () => bridgeError() ?? state()?.error?.message
   const signedOut = () => state()?.error?.code === "not-signed-in"
   const login = () => state()?.login ?? null
+  const policyRequired = () => state()?.networkPolicy === "required"
+  const policyBusy = () => policyRequestPending() || state()?.policySetup.pending === true
+  const policyFailure = () => policyError() ?? state()?.policySetup.error
+  async function initializePolicy(): Promise<void> {
+    const preset = selectedPolicy()
+    if (!preset || policyBusy()) return
+    setPolicyRequestPending(true)
+    setPolicyError(null)
+    try {
+      await client.initializePolicy(preset, { signal: lifetime.signal })
+    } catch {
+      if (!lifetime.signal.aborted) setPolicyError("Cannot reach Desktop to initialize the network policy. Refresh before retrying.")
+    } finally {
+      if (!lifetime.signal.aborted) setPolicyRequestPending(false)
+    }
+  }
   const hasResult = () => state()?.updatedAt != null
   const updated = () => {
     const timestamp = state()?.updatedAt
@@ -128,6 +153,40 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         )}
       </Show>
 
+      <Show when={!signedOut() && (policyRequired() || policyBusy())}>
+        <section class="sbx-panel__error" aria-label="Network policy setup">
+          <h3>Choose a network policy</h3>
+          <p id={`${detailsPrefix}-policy-scope`} class="sbx-panel__muted">
+            This one-time choice applies to all local sandboxes on this machine. Organization policies still take precedence. Existing policies are never reset here.
+          </p>
+          <fieldset class="sbx-panel__policy" disabled={policyBusy()} aria-describedby={`${detailsPrefix}-policy-scope`}>
+            <legend>Outbound network access</legend>
+            <For each={POLICY_PRESETS}>
+              {(preset) => (
+                <label class="sbx-panel__policy-option">
+                  <input
+                    type="radio"
+                    name={`${detailsPrefix}-network-policy`}
+                    value={preset.id}
+                    checked={(policyBusy() ? state()?.policySetup.preset ?? selectedPolicy() : selectedPolicy()) === preset.id}
+                    onChange={() => setSelectedPolicy(preset.id)}
+                  />
+                  <span><strong>{preset.title}</strong><span class="sbx-panel__muted">{preset.description}</span></span>
+                </label>
+              )}
+            </For>
+          </fieldset>
+          <ui.Button size="small" variant="contrast" disabled={!selectedPolicy()} busy={policyBusy()} onClick={() => void initializePolicy()}>
+            {policyBusy() ? "Applying policy…" : "Apply network policy"}
+          </ui.Button>
+          <p class="sbx-panel__muted">Starting sandboxes is disabled until setup is complete. After applying a policy, click Start to retry.</p>
+        </section>
+      </Show>
+
+      <Show when={!signedOut() && policyFailure()}>
+        {(message) => <div class="sbx-panel__error" role="alert">{message()}</div>}
+      </Show>
+
       <Show when={!hasResult() && !error()}>
         <div class="sbx-panel__empty" role="status">
           <ui.Loader size="normal" />
@@ -168,16 +227,27 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
                       >
                         Info
                       </button>
-                      <Show when={pendingAction(sandbox.id) ?? sandboxAction(sandbox.status)}>
+                      <ui.Tooltip value="Re-run sandbox setup to repair the MCP gateway. Also starts stopped sandboxes.">
+                        <ui.Button
+                          size="small"
+                          variant="neutral"
+                          busy={pendingAction(sandbox.id) === "repair"}
+                          disabled={!!pendingAction(sandbox.id) || !!error() || policyRequired() || policyBusy() || !sandboxAction(sandbox.status)}
+                          onClick={() => void change(sandbox.id, "repair")}
+                        >
+                          {pendingAction(sandbox.id) === "repair" ? "Repairing…" : "Repair"}
+                        </ui.Button>
+                      </ui.Tooltip>
+                      <Show when={sandboxAction(sandbox.status)}>
                         {(action) => (
                           <ui.Button
                             size="small"
                             variant="neutral"
-                            busy={!!pendingAction(sandbox.id)}
-                            disabled={!!error()}
+                            busy={pendingAction(sandbox.id) === action()}
+                            disabled={!!pendingAction(sandbox.id) || !!error() || (action() === "start" && (policyRequired() || policyBusy()))}
                             onClick={() => void change(sandbox.id, action())}
                           >
-                            {pendingAction(sandbox.id)
+                            {pendingAction(sandbox.id) === action()
                               ? action() === "start" ? "Starting…" : "Stopping…"
                               : action() === "start" ? "Start" : "Stop"}
                           </ui.Button>

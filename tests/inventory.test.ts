@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createInventory } from "../src/inventory"
-import type { AuthState, Sandbox, SbxVersions } from "../src/model"
+import type { Sandbox, SbxVersions } from "../src/model"
 import { SbxError } from "../src/sbx"
 
 const sandbox: Sandbox = {
@@ -22,7 +22,7 @@ test("does not execute the CLI until a window asks for a refresh", () => {
   })
   assert.equal(calls, 0)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, login: null,
+    sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, networkPolicy: null, login: null,
   })
 })
 
@@ -44,7 +44,7 @@ test("shares concurrent refreshes between windows and publishes loading/success"
   await first
   assert.equal(changes, 2)
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null, login: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null, networkPolicy: null, login: null,
   })
 })
 
@@ -62,7 +62,7 @@ test("retains the last good inventory after failure and clears errors after reco
   failing = true
   await inventory.refresh()
   assert.deepEqual(inventory.state(), {
-    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null, login: null,
+    sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null, networkPolicy: null, login: null,
     error: { code: "timeout", message: "Timed out" },
   })
   failing = false
@@ -183,7 +183,7 @@ test("reads the authentication state once and reuses it for later refreshes", as
   let authCalls = 0
   const inventory = createInventory({
     load: async () => [],
-    auth: async () => { authCalls++; return "authenticated" as AuthState },
+    diagnostics: async () => { authCalls++; return { auth: "authenticated", networkPolicy: "initialized" } },
     changed: () => {}, signal: new AbortController().signal, now: () => 123,
   })
   await inventory.refresh()
@@ -196,7 +196,7 @@ test("a diagnostics failure does not fail the inventory refresh", async () => {
   let authCalls = 0
   const inventory = createInventory({
     load: async () => [sandbox],
-    auth: async () => { authCalls++; throw new Error("diagnose unavailable") },
+    diagnostics: async () => { authCalls++; throw new Error("diagnose unavailable") },
     changed: () => {}, signal: new AbortController().signal, now: () => 123,
   })
   await inventory.refresh()
@@ -206,7 +206,7 @@ test("a diagnostics failure does not fail the inventory refresh", async () => {
   assert.equal(inventory.state().error, null)
 })
 
-test("a signed-out refresh offers login, which clears once signed in", async () => {
+test("a signed-out refresh offers sign-in without pretending a login has started", async () => {
   let signedIn = false
   const inventory = createInventory({
     load: async () => {
@@ -217,7 +217,9 @@ test("a signed-out refresh offers login, which clears once signed in", async () 
   })
   await inventory.refresh()
   assert.equal(inventory.state().error?.code, "not-signed-in")
-  assert.deepEqual(inventory.state().login, { url: null, code: null })
+  assert.equal(inventory.state().login, null)
+  await inventory.refresh()
+  assert.equal(inventory.state().login, null, "polling must leave the sign-in button enabled")
 
   // A non-sign-in failure must not offer login.
   inventory.setLogin(null)
@@ -238,6 +240,21 @@ test("a signed-out refresh offers login, which clears once signed in", async () 
   assert.equal(inventory.state().login, null)
 })
 
+test("signed-out polling preserves a real pending login but does not recreate a cancelled one", async () => {
+  const inventory = createInventory({
+    load: async () => { throw new SbxError({ code: "not-signed-in", message: "Not signed in" }) },
+    changed: () => {}, signal: new AbortController().signal,
+  })
+  const login = { url: "https://login.docker.com/activate?user_code=TEST-CODE", code: "TEST-CODE" }
+  inventory.setLogin(login)
+  await inventory.refresh()
+  assert.deepEqual(inventory.state().login, login)
+
+  inventory.setLogin(null)
+  await inventory.refresh()
+  assert.equal(inventory.state().login, null)
+})
+
 test("setLogin publishes immediately and is visible before the next refresh", async () => {
   let changes = 0
   const inventory = createInventory({
@@ -249,4 +266,60 @@ test("setLogin publishes immediately and is visible before the next refresh", as
   assert.deepEqual(inventory.state().login, { url: null, code: null })
   inventory.setLogin(null)
   assert.equal(inventory.state().login, null)
+})
+
+test("post-login reload rechecks cached diagnostics and exposes missing network policy", async () => {
+  let signedIn = false
+  let calls = 0
+  const inventory = createInventory({
+    load: async () => [],
+    diagnostics: async () => {
+      calls++
+      return signedIn
+        ? { auth: "authenticated", networkPolicy: "required" }
+        : { auth: "unknown", networkPolicy: "initialized" }
+    },
+    changed: () => {}, signal: new AbortController().signal,
+  })
+  await inventory.refresh()
+  await inventory.refresh()
+  assert.equal(calls, 1)
+  signedIn = true
+  await inventory.reload()
+  assert.equal(calls, 2)
+  assert.equal(inventory.state().auth, "authenticated")
+  assert.equal(inventory.state().networkPolicy, "required")
+})
+
+test("missing policy is rechecked while polling and clears after external CLI setup", async () => {
+  let initialized = false
+  let calls = 0
+  const inventory = createInventory({
+    load: async () => [sandbox],
+    diagnostics: async () => {
+      calls++
+      return { auth: "authenticated", networkPolicy: initialized ? "initialized" : "required" }
+    },
+    changed: () => {}, signal: new AbortController().signal,
+  })
+  await inventory.refresh()
+  assert.equal(inventory.state().networkPolicy, "required")
+  assert.deepEqual(inventory.state().sandboxes, [sandbox])
+  initialized = true
+  await inventory.refresh()
+  assert.equal(inventory.state().networkPolicy, "initialized")
+  await inventory.refresh()
+  assert.equal(calls, 2)
+})
+
+test("diagnostics and policy-required errors survive a failed sandbox listing", async () => {
+  const inventory = createInventory({
+    load: async () => { throw new SbxError({ code: "network-policy-required", message: "Choose a preset" }) },
+    diagnostics: async () => ({ auth: "authenticated", networkPolicy: "unknown" }),
+    changed: () => {}, signal: new AbortController().signal,
+  })
+  await inventory.refresh()
+  assert.equal(inventory.state().networkPolicy, "required")
+  assert.equal(inventory.state().auth, "authenticated")
+  assert.equal(inventory.state().error?.code, "network-policy-required")
 })

@@ -5,8 +5,18 @@ export interface SbxVersions {
 
 export type AuthState = "authenticated" | "unauthenticated" | "unknown"
 
+export type NetworkPolicyStatus = "initialized" | "required" | "unknown"
+export type NetworkPolicyPreset = "balanced" | "allow-all" | "deny-all"
+
+export interface PolicySetup {
+  readonly preset: NetworkPolicyPreset | null
+  readonly pending: boolean
+  readonly error: string | null
+}
+
 export interface Diagnostics {
   readonly auth: AuthState
+  readonly networkPolicy: NetworkPolicyStatus
 }
 
 export interface Sandbox {
@@ -17,7 +27,7 @@ export interface Sandbox {
   readonly workspaces: readonly string[]
 }
 
-export type SandboxAction = "start" | "stop"
+export type SandboxAction = "start" | "stop" | "repair"
 
 export interface SandboxOperation {
   readonly id: string
@@ -26,7 +36,7 @@ export interface SandboxOperation {
   readonly error: string | null
 }
 
-export function sandboxAction(status: string): SandboxAction | null {
+export function sandboxAction(status: string): "start" | "stop" | null {
   switch (statusTone(status)) {
     case "running": return "stop"
     case "stopped": return "start"
@@ -41,6 +51,7 @@ export type InventoryErrorCode =
   | "command-failed"
   | "invalid-output"
   | "not-signed-in"
+  | "network-policy-required"
 
 export interface InventoryError {
   readonly code: InventoryErrorCode
@@ -54,6 +65,7 @@ export interface Inventory {
   readonly error: InventoryError | null
   readonly versions: SbxVersions | null
   readonly auth: AuthState | null
+  readonly networkPolicy: NetworkPolicyStatus | null
   readonly login: { readonly url: string | null; readonly code: string | null } | null
 }
 

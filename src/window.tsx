@@ -1,6 +1,6 @@
 import { Command, MenuItem, Panel, Style, type PanelTab, type Plugin } from "@opencode/plugin/gui"
 import { SandboxPanel } from "./panel"
-import { openSandboxes } from "./navigation"
+import { createSandboxLauncher, openSandboxes } from "./navigation"
 import css from "./panel.css?inline"
 import { ErrorBoundary } from "solid-js"
 
@@ -62,17 +62,5 @@ export const setup: Plugin.Setup = (ctx) => {
     enabled: ctx.app.platform === "desktop",
     run: open,
   }))
-  ctx.add(MenuItem, (): MenuItem => {
-    const session = ctx.sessions.current()
-    return {
-      id: "open",
-      menu: "session.panel",
-      title: "Docker Sandboxes",
-      description: "Local sandbox status",
-      icon: "cube",
-      keybind: `${ctx.id}.open`,
-      opened: !!session && ctx.layout.state(key, session) !== "closed",
-      run: open,
-    }
-  })
+  ctx.add(MenuItem, createSandboxLauncher(ctx, key, open))
 }

@@ -1,5 +1,34 @@
 # Handoff: Docker Sandboxes launcher dead in OpenCode Desktop (recurrence)
 
+## Follow-up: MCP gateway repair
+
+- Each card now has **Info → Repair → Start/Stop**. Repair invokes exactly `sbx run --detach --name <current-sandbox-name>`, even for running sandboxes; it also starts a stopped sandbox. No stop, reset, or recreate command is added.
+- Repair uses the existing ID recheck and per-sandbox cross-window action lock, with shared **Repairing…** state, failure reporting, and post-action refresh. Unknown/transitional statuses, stale inventory, and missing/pending network policy setup disable the button.
+- IPC is now **v7**, since the action input and shared operation state now accept `repair`. The v6/v5 notes below describe earlier fixes.
+- Validation: typecheck, all **92 tests**, and build pass. Tests cover repair on running/stopped sandboxes, ID/name rechecks, invalid states, shared locking, failures/retries, exact CLI arguments, and the new IPC codec. They use fake CLI commands and do not execute repair against a real sandbox.
+
+## Follow-up: post-login network policy setup
+
+- The panel now reads **Global network policy** from `sbx diagnose --format json` alongside authentication, including valid diagnostic reports returned with a nonzero exit. An explicit `not initialized` warning/failure means setup is required; absent/skipped/unrecognized checks remain unknown.
+- After login, diagnostics are forced fresh. Required/unknown policy status is rechecked during polling; an existing initialized policy is reused. Diagnostics survive listing failures.
+- `src/policy.ts` manages an explicit, single-flight policy initialization shared across windows. It checks status again before executing `sbx policy init balanced|allow-all|deny-all`, skips an existing policy, and refuses to mutate an unknown status. It never runs policy reset or starts a sandbox automatically.
+- The panel offers all three presets with descriptions and an explicit **Apply network policy** button; no default is selected. Start is disabled while setup is required or pending; Stop remains available when the inventory is otherwise healthy. Errors and retries are visible.
+- IPC is now **v6** (new policy status/setup state and `initializePolicy` method). The v5 notes in the original resolution below describe the earlier launcher fix only.
+- Validation: 84 tests plus typecheck/build pass. Read-only verification against the real CLI returned `{ "auth": "authenticated", "networkPolicy": "initialized" }`. The existing machine policy was not changed or reset; the missing-policy mutation path is tested with fake CLI fixtures, not a destructive live reset.
+
+## Resolution (2026-10-29, ~23:32 local)
+
+Both the recurring dead launcher and the false pending sign-in screen were reproduced and fixed. The original investigation below is retained for context.
+
+- **Launcher root cause:** `ctx.add(MenuItem, () => ({ ... }))` read the current session and layout state, returning a new item on reactive updates. Desktop renders launcher rows with a Solid `For` keyed by item object identity. A genuine CDP mouse press caused the Docker Sandboxes button to be removed during `pointerdown`; `mousedown` then targeted the surrounding div, and no `click` was delivered after `mouseup`. The plugin's `run` never executed, explaining the absence of errors. Calling `run` directly opened and rendered the panel successfully.
+- **Launcher fix:** `src/navigation.ts` now exports `createSandboxLauncher`, a stable item with a reactive `opened` getter. `src/window.tsx` registers that object, not a reactive factory. Verified live: the button remains the same connected DOM node after a genuine mouse press; release delivers a trusted `click` and opens the panel with layout state `visible`.
+- **Sign-in root cause:** a failed signed-out inventory refresh assigned `{ url: null, code: null }` to `login`, although no `sbx login` had started. The UI interpreted that object as an active flow, disabled the button, and showed “Waiting for sign-in…” without opening a browser.
+- **Sign-in fix:** inventory failures preserve `login`; only the explicit start-login handler creates a pending flow. Verified live while signed out: the panel shows an enabled **Sign in to Docker** button, with no login process running. Actual browser confirmation is left to the user; no real login was started during this investigation.
+- **Validation:** `npm run check` passes all 63 tests, including the launcher getter and repeated signed-out refresh/cancel regressions. Temporary diagnostic code, local socket, and injected event listeners were removed after live verification. IPC shape unchanged, so the contract remains v5.
+- **Service:** no restart was needed. PID 61438 is healthy and hosts this agent session. Fresh plugin-load log entries were found at 23:21–23:22 local, so the earlier missing-load evidence was incomplete. Rebuilds do reach both plugin processes.
+
+---
+
 Project: `/home/jsc/projects/opencode-sbx-plugin` (git repo, clean tree at commit `977de4e`)
 Date: 2026-10-29, ~23:20 local. All times below are local (UTC+1).
 

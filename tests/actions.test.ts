@@ -61,6 +61,73 @@ test("stops a running sandbox", async () => {
   assert.equal(env.counts().refreshed, 1)
 })
 
+test("repair executes on both running and stopped sandboxes instead of treating running as a no-op", async () => {
+  for (const sandbox of [running, stopped]) {
+    const env = setup([sandbox])
+    const actions = createSandboxActions(env.options)
+    await actions.change(sandbox.id, "repair")
+    assert.deepEqual(env.calls, [{ sandbox, action: "repair" }])
+    assert.equal(env.counts().refreshed, 1)
+    assert.deepEqual(actions.state(), [])
+  }
+})
+
+test("repair rechecks the ID and uses the latest sandbox name", async () => {
+  const renamed = { ...running, name: "renamed-sandbox" }
+  const env = setup([renamed])
+  await createSandboxActions(env.options).change(running.id, "repair")
+  assert.deepEqual(env.calls, [{ sandbox: renamed, action: "repair" }])
+
+  const replacement = setup([{ ...running, id: "replacement" }])
+  const actions = createSandboxActions(replacement.options)
+  await actions.change(running.id, "repair")
+  assert.deepEqual(replacement.calls, [])
+  assert.match(actions.state()[0]?.error ?? "", /no longer exists/)
+})
+
+test("repair does not run on transitional or unknown sandbox statuses", async () => {
+  for (const status of ["starting", "stopping", "unknown", "failed"]) {
+    const env = setup([{ ...running, status }])
+    const actions = createSandboxActions(env.options)
+    await actions.change(running.id, "repair")
+    assert.deepEqual(env.calls, [])
+    assert.match(actions.state()[0]?.error ?? "", /not running or stopped/)
+  }
+})
+
+test("repair locks out duplicate repairs and start/stop until its refresh completes", async () => {
+  const env = setup([running])
+  const refreshing = deferred<void>()
+  const entered = deferred<void>()
+  env.options.refresh = () => { entered.resolve(); return refreshing.promise }
+  const actions = createSandboxActions(env.options)
+  const first = actions.change(running.id, "repair")
+  await entered.promise
+  for (const action of ["repair", "start", "stop"] as const) assert.equal(actions.change(running.id, action), first)
+  assert.deepEqual(actions.state(), [{ id: running.id, action: "repair", pending: true, error: null }])
+  refreshing.resolve()
+  await first
+  assert.equal(env.calls.length, 1)
+  assert.deepEqual(actions.state(), [])
+})
+
+test("repair failures surface on the card and allow retrying", async () => {
+  const env = setup([running])
+  let failing = true
+  env.options.execute = async (sandbox, action) => {
+    env.calls.push({ sandbox, action })
+    if (failing) throw new SbxError({ code: "command-failed", message: "Could not repair the sandbox." })
+  }
+  const actions = createSandboxActions(env.options)
+  await actions.change(running.id, "repair")
+  assert.deepEqual(actions.state(), [{ id: running.id, action: "repair", pending: false, error: "Could not repair the sandbox." }])
+  failing = false
+  await actions.change(running.id, "repair")
+  assert.deepEqual(actions.state(), [])
+  assert.equal(env.calls.length, 2)
+  assert.equal(env.counts().refreshed, 2)
+})
+
 test("rechecks the ID and uses the latest sandbox name, not a stale UI name", async () => {
   const current = { ...stopped, name: "renamed-website" }
   const env = setup([current])

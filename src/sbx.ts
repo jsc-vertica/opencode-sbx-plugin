@@ -1,23 +1,12 @@
 import { execFile } from "node:child_process"
-import type { InventoryError, Sandbox, SandboxAction } from "./model"
+import type { Diagnostics, InventoryError, NetworkPolicyPreset, NetworkPolicyStatus, Sandbox, SandboxAction, SbxVersions } from "./model"
 
 export const CLI_TIMEOUT_MS = 10_000
 export const ACTION_TIMEOUT_MS = 60_000
 export const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 
-export interface SbxVersions {
-  readonly client: string | null
-  readonly server: string | null
-}
-
-export type AuthState = "authenticated" | "unauthenticated" | "unknown"
-
-export interface Diagnostics {
-  readonly auth: AuthState
-}
-
 /**
- * Reads the Authentication check from `sbx diagnose --format json`.
+ * Reads authentication and one-time network policy setup from `sbx diagnose --format json`.
  * Only a passing "authenticated" report counts as signed in; failures, skips,
  * and unknown check names are all reported as unknown rather than signed out.
  */
@@ -26,14 +15,22 @@ export function parseDiagnostics(output: string): Diagnostics {
   try {
     value = JSON.parse(output)
   } catch {
-    return { auth: "unknown" }
+    return { auth: "unknown", networkPolicy: "unknown" }
   }
-  if (!record(value) || !Array.isArray(value.checks)) return { auth: "unknown" }
+  if (!record(value) || !Array.isArray(value.checks)) return { auth: "unknown", networkPolicy: "unknown" }
   const check = value.checks.find((item: unknown) => record(item) && item.name === "Authentication")
-  if (!record(check) || check.status !== "pass") return { auth: "unknown" }
-  return { auth: /not authenticated|signed out|logged out/i.test(String(check.message))
+  const policy = value.checks.find((item: unknown) => record(item) && item.name === "Global network policy")
+  let networkPolicy: NetworkPolicyStatus = "unknown"
+  if (record(policy)) {
+    if (policy.status === "pass" && policy.message === "initialized") networkPolicy = "initialized"
+    else if ((policy.status === "warn" || policy.status === "fail")
+      && /\bnot initialized\b|\bhas not been initialized\b/i.test(String(policy.message))) networkPolicy = "required"
+  }
+  const auth = !record(check) || check.status !== "pass" ? "unknown"
+    : /not authenticated|signed out|logged out/i.test(String(check.message))
     ? "unauthenticated"
-    : "authenticated" }
+    : "authenticated"
+  return { auth, networkPolicy }
 }
 
 /** Extracts "v0.50.1" from CLI output, tolerating prefixes, revisions, and surrounding text. */
@@ -122,6 +119,12 @@ export function commandError(error: ProcessFailure, stderr = "", options = {
       message: "Not signed in to Docker. Sign in to list your sandboxes.",
     })
   }
+  if (/policy[._]not_initialized|global network policy (?:has not been|is not) initialized/i.test(stderr)) {
+    return new SbxError({
+      code: "network-policy-required",
+      message: "Choose a network policy in this panel before starting a sandbox, or run `sbx policy init <allow-all|balanced|deny-all>` in a terminal.",
+    })
+  }
   if (error.code === "ENOENT") {
     return new SbxError({
       code: "missing-cli",
@@ -167,7 +170,28 @@ export function readVersions(options: ListOptions): Promise<SbxVersions> {
 }
 
 export function readDiagnostics(options: ListOptions): Promise<Diagnostics> {
-  return executeSbx(options, ["diagnose", "--format", "json"]).then(parseDiagnostics)
+  return executeSbx(options, ["diagnose", "--format", "json"], {
+    timeout: CLI_TIMEOUT_MS,
+    failureMessage: "Could not read sbx diagnostics. Run `sbx diagnose --format json` in a terminal.",
+    // diagnose can exit nonzero precisely because policy setup is required.
+    acceptFailureOutput: (output) => {
+      try {
+        const report: unknown = JSON.parse(output)
+        return record(report) && Array.isArray(report.checks)
+      } catch {
+        return false
+      }
+    },
+  }).then(parseDiagnostics)
+}
+
+export async function initializeNetworkPolicy(options: ListOptions, preset: NetworkPolicyPreset): Promise<void> {
+  if (!["balanced", "allow-all", "deny-all"].includes(preset)) throw new Error("Unsupported network policy preset")
+  // Initialization only: never reset or replace an existing policy.
+  await executeSbx(options, ["policy", "init", preset], {
+    timeout: ACTION_TIMEOUT_MS,
+    failureMessage: "Could not initialize the network policy. Refresh to check its status, then retry. Existing policies are never reset by this panel.",
+  })
 }
 
 export const LOGIN_TIMEOUT_MS = 10 * 60_000
@@ -232,9 +256,9 @@ export function startLogin({ executable, signal }: ListOptions, options = {
 }
 
 export async function changeSandbox(options: ListOptions, sandbox: Sandbox, action: SandboxAction): Promise<void> {
-  const args = action === "start"
-    ? ["run", "--detach", "--name", sandbox.name]
-    : ["stop", "--", sandbox.name]
+  const args = action === "stop"
+    ? ["stop", "--", sandbox.name]
+    : ["run", "--detach", "--name", sandbox.name]
   await executeSbx(options, args, {
     timeout: ACTION_TIMEOUT_MS,
     failureMessage: `Could not ${action} the sandbox. Check sbx in a terminal, then refresh to check its status before retrying.`,
@@ -244,7 +268,7 @@ export async function changeSandbox(options: ListOptions, sandbox: Sandbox, acti
 function executeSbx(
   { executable, signal }: ListOptions,
   args: string[],
-  options?: { timeout: number; failureMessage: string },
+  options?: { timeout: number; failureMessage: string; acceptFailureOutput?: (output: string) => boolean },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(executable, args, {
@@ -258,7 +282,7 @@ function executeSbx(
         reject(signal.reason ?? new Error("Sandbox refresh cancelled"))
         return
       }
-      if (error) {
+      if (error && !(typeof error.code === "number" && !error.killed && options?.acceptFailureOutput?.(stdout))) {
         reject(commandError(error, stderr, options))
         return
       }
