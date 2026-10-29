@@ -1,0 +1,33 @@
+{
+  "name": "opencode-sbx-plugin",
+  "version": "0.1.0",
+  "description": "A read-only Docker Sandboxes side panel for OpenCode Desktop.",
+  "type": "module",
+  "exports": {
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.2.2",
+    "effect": "4.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "solid-js": "1.9.17",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vite": "7.3.7",
+    "vite-plugin-solid": "2.11.10"
+  }
+}
