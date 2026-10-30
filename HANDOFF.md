@@ -1,5 +1,13 @@
 # Handoff: Docker Sandboxes launcher dead in OpenCode Desktop (recurrence)
 
+## Settings-page migration
+
+- The inventory and all existing controls now live at **Settings → Docker Sandboxes**. `src/navigation.ts` registers a `SettingsPage` with the plugin ID and settings-search metadata. The existing **Open Docker Sandboxes** command opens that page with `ctx.layout.settings`.
+- The former `Panel`, side-panel `MenuItem`, draft-session dialog, and mobile view registrations are removed. A mounted session is no longer needed. Desktop mounts settings content only while its settings tab is active, so existing polling/cleanup follows the page lifecycle.
+- The reusable inventory view, sign-in flow, policy setup, Info/Repair/Start/Stop actions, and IPC contract are unchanged. Styling now fits the settings page's own scrolling container. No IPC bump is needed for this UI-only change.
+- Validation: typecheck, all **100 tests**, and build pass. New registration tests cover the top-level settings contribution, removal of panel/menu registrations, lazy rendering, command navigation without a session, matching page IDs, and settings search metadata.
+- The live profile currently tracks the GitHub `release` branch, not the source checkout. A local build alone does not publish this migration to that installation.
+
 ## GitHub distribution (2026-10-30)
 
 - Install with `opencode plugin add github:jsc-vertica/opencode-sbx-plugin#release`; update using the same target with `opencode plugin update`.

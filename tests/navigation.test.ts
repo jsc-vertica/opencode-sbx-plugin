@@ -1,75 +1,79 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import type { Context, MountedSession, PanelState } from "@opencode/plugin/gui"
-import { createSandboxLauncher, openSandboxes } from "../src/navigation"
+import { Command, MenuItem, Panel, SettingsPage, type Context } from "@opencode/plugin/gui"
+import { registerSandboxSettings } from "../src/navigation"
 
-function context(session?: MountedSession) {
-  const opened: unknown[][] = []
-  // The launcher needs only these two host operations; other host methods are not used.
+function context(platform: "desktop" | "web" = "desktop", id = "opencode-sbx-plugin") {
+  const contributions: { registry: { readonly id: string }; item: unknown }[] = []
+  const opened: string[] = []
+  // Deliberately no sessions, dialogs, side-panel writes, or readiness checks.
   const ctx = {
-    sessions: { current: () => session },
-    layout: { open: (...args: unknown[]) => { opened.push(args) } },
-  } as unknown as Pick<Context, "sessions" | "layout">
-  return { ctx, opened }
+    id,
+    app: { platform },
+    add: (registry: { readonly id: string }, item: unknown) => {
+      contributions.push({ registry, item })
+      return () => {}
+    },
+    layout: { settings: (page: string) => { opened.push(page) } },
+  } as unknown as Pick<Context, "id" | "app" | "add" | "layout">
+  const page = () => contributions.find((item) => item.registry.id === SettingsPage.id)?.item as SettingsPage
+  const command = () => {
+    const factory = contributions.find((item) => item.registry.id === Command.id)?.item as () => Command
+    return factory()
+  }
+  return { ctx, contributions, opened, page, command }
 }
 
-test("a launcher click without a mounted session opens the fallback instead of silently doing nothing", () => {
-  const { ctx, opened } = context()
-  let dialogs = 0
-  openSandboxes(ctx, "opencode-sbx-plugin:sandboxes", () => { dialogs++ })
-  assert.equal(dialogs, 1)
-  assert.equal(opened.length, 0)
+test("registers a top-level settings page instead of a side panel or launcher", () => {
+  const env = context()
+  registerSandboxSettings(env.ctx, () => null)
+  assert.deepEqual(env.contributions.map((item) => item.registry.id), [SettingsPage.id, Command.id])
+  assert.equal(env.contributions.some((item) => item.registry.id === Panel.id || item.registry.id === MenuItem.id), false)
+  assert.equal(env.page().id, "opencode-sbx-plugin")
+  assert.equal(env.page().title, "Docker Sandboxes")
+  assert.equal(env.page().icon, "cube")
+  assert.equal(env.page().page, undefined, "must be its own page, not rows in General")
 })
 
-test("an active session opens its side panel without opening a dialog", () => {
-  const session = { id: "active-session" } as MountedSession
-  const { ctx, opened } = context(session)
-  openSandboxes(ctx, "opencode-sbx-plugin:sandboxes", () => {
-    assert.fail("An active session must use its side panel")
-  })
-  assert.deepEqual(opened, [["opencode-sbx-plugin:sandboxes", session]])
+test("registration does not mount the inventory or start background polling", () => {
+  const env = context()
+  let renders = 0
+  registerSandboxSettings(env.ctx, () => { renders++; return null })
+  assert.equal(renders, 0)
+  assert.deepEqual(env.opened, [])
+  env.page().render({})
+  assert.equal(renders, 1)
 })
 
-test("the launcher reads the current session on every click, not the session at setup time", () => {
-  const session = { id: "new-session" } as MountedSession
-  const { ctx, opened } = context()
-  let current: MountedSession | undefined
-  ctx.sessions.current = () => current
-  let dialogs = 0
-  const click = () => openSandboxes(ctx, "opencode-sbx-plugin:sandboxes", () => { dialogs++ })
-  click()
-  current = session
-  click()
-  assert.equal(dialogs, 1)
-  assert.deepEqual(opened, [["opencode-sbx-plugin:sandboxes", session]])
+test("the existing open command navigates to settings without a mounted session", () => {
+  const env = context()
+  registerSandboxSettings(env.ctx, () => null)
+  const command = env.command()
+  assert.equal(command.id, "open")
+  assert.equal(command.title, "Open Docker Sandboxes")
+  assert.equal(command.enabled, true)
+  command.run()
+  command.run()
+  assert.deepEqual(env.opened, ["opencode-sbx-plugin", "opencode-sbx-plugin"])
 })
 
-test("the launcher is a stable item with a live opened getter, not a row-replacing reactive factory", () => {
-  let session: MountedSession | undefined
-  let sessionReads = 0
-  let state: PanelState = "closed"
-  let clicks = 0
-  const ctx = {
-    id: "opencode-sbx-plugin",
-    sessions: { current: () => { sessionReads++; return session } },
-    layout: { state: () => state },
-  } as unknown as Pick<Context, "id" | "sessions" | "layout">
-  const launcher = createSandboxLauncher(ctx, `${ctx.id}:sandboxes`, () => { clicks++ })
-  assert.equal(typeof launcher, "object")
-  assert.equal(sessionReads, 0, "registration must not subscribe to session or focus changes")
-  assert.equal(typeof Object.getOwnPropertyDescriptor(launcher, "opened")?.get, "function")
-  assert.equal(launcher.opened, false)
-  assert.equal(launcher.keybind, "opencode-sbx-plugin.open")
+test("settings navigation uses the exact registered plugin page ID", () => {
+  const env = context("desktop", "different-plugin-id")
+  registerSandboxSettings(env.ctx, () => null)
+  env.command().run()
+  assert.deepEqual(env.opened, [env.page().id])
+})
 
-  session = { id: "active-session" } as MountedSession
-  for (const next of ["closed", "open", "active", "visible"] as const) {
-    state = next
-    assert.equal(launcher.opened, next !== "closed")
-  }
-  // The same item's getter follows session changes without another factory call.
-  session = { id: "another-session" } as MountedSession
-  state = "closed"
-  assert.equal(launcher.opened, false)
-  launcher.run()
-  assert.equal(clicks, 1)
+test("the page is discoverable in settings search without mounting its content", () => {
+  const env = context()
+  registerSandboxSettings(env.ctx, () => assert.fail("Search metadata must not render the inventory"))
+  const entry = env.page().entries?.find((item) => item.id === env.page().id)
+  assert.ok(entry)
+  for (const word of ["sbx", "docker", "repair", "mcp", "login", "policy"]) assert.ok(entry.keywords?.includes(word))
+})
+
+test("the Desktop-specific open command stays disabled in web clients", () => {
+  const env = context("web")
+  registerSandboxSettings(env.ctx, () => null)
+  assert.equal(env.command().enabled, false)
 })

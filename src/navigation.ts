@@ -1,42 +1,31 @@
-import type { Context, SessionPanelMenuItem } from "@opencode/plugin/gui"
+import { Command, SettingsPage, type Context } from "@opencode/plugin/gui"
 
-/** Keep the launcher row mounted when focus/layout changes during a pointer press. */
-export function createSandboxLauncher(
-  ctx: Pick<Context, "id" | "sessions" | "layout">,
-  key: string,
-  run: () => void,
-): SessionPanelMenuItem {
-  return {
-    id: "open",
-    menu: "session.panel",
-    title: "Docker Sandboxes",
-    description: "Local sandbox status",
-    icon: "cube",
-    keybind: `${ctx.id}.open`,
-    // A reactive factory returning a new object replaces Desktop's keyed launcher
-    // button on pointerdown, before mouseup can deliver its click. Use a stable
-    // item with a reactive getter instead.
-    get opened() {
-      const session = ctx.sessions.current()
-      return !!session && ctx.layout.state(key, session) !== "closed"
-    },
-    run,
-  }
-}
-
-/** Desktop offers launchers on drafts too, where sessions.current() is undefined. */
-export function openSandboxes(
-  ctx: Pick<Context, "sessions" | "layout">,
-  key: string,
-  withoutSession: () => void,
+/** A machine-wide settings page, independent of the current session or panel layout. */
+export function registerSandboxSettings(
+  ctx: Pick<Context, "id" | "app" | "add" | "layout">,
+  render: SettingsPage["render"],
 ): void {
-  const session = ctx.sessions.current()
-  if (!session) {
-    withoutSession()
-    return
-  }
-
-  // The default open also selects the panel's mobile view on a narrow window.
-  // { tab: "select" } intentionally keeps that view unchanged, so is wrong for a launcher.
-  ctx.layout.open(key, session)
+  // Settings page IDs are used verbatim by both the sidebar and layout.settings.
+  const page = ctx.id
+  ctx.add(SettingsPage, {
+    id: page,
+    title: "Docker Sandboxes",
+    icon: "cube",
+    entries: [{
+      id: page,
+      title: "Docker Sandboxes",
+      description: "Manage local sandboxes, Docker sign-in, and network policy",
+      keywords: "sbx docker sandbox containers status start stop repair mcp login network policy",
+    }],
+    render,
+  })
+  ctx.add(Command, (): Command => ({
+    id: "open",
+    title: "Open Docker Sandboxes",
+    description: "Manage local sandboxes in Settings",
+    keywords: "sbx docker sandbox containers status settings repair mcp",
+    group: "Docker Sandboxes",
+    enabled: ctx.app.platform === "desktop",
+    run: () => ctx.layout.settings(page),
+  }))
 }
