@@ -1,6 +1,6 @@
 # OpenCode Docker Sandboxes
 
-A **Docker Sandboxes** side panel for OpenCode Desktop. Lists local sandboxes, their running/stopped status, agent, and workspaces using `sbx ls --format json`, with buttons to start and stop existing sandboxes.
+A **Docker Sandboxes** settings page for OpenCode Desktop. Lists local sandboxes, their running/stopped status, agent, and workspaces using `sbx ls --format json`, with buttons to start, stop, and repair existing sandboxes.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ Install the prebuilt **release** branch using OpenCode CLI 2.2.2:
 opencode plugin add github:jsc-vertica/opencode-sbx-plugin#release
 ```
 
-This adds the plugin to your global OpenCode configuration. Open Desktop, then select **+ → Docker Sandboxes** or run **Open Docker Sandboxes** from the command palette. Sign-in and first-time network policy setup are offered in the panel when needed. Docker Sandboxes must already be installed separately, with `sbx` available to Desktop.
+This adds the plugin to your global OpenCode configuration. Open Desktop, then select **Settings → Docker Sandboxes** or run **Open Docker Sandboxes** from the command palette. Sign-in and first-time network policy setup are offered on this page when needed. Docker Sandboxes must already be installed separately, with `sbx` available to Desktop.
 
 The `release` branch contains the prebuilt GUI, README, and a minimal package manifest with no build scripts or dependencies. You do not need to clone the source or install Node/Vite/Electron to build it. The `master` branch is for development; do not use it as the install target because OpenCode 2.2.2's Git dependency preparation fails on its build hooks.
 
@@ -59,9 +59,9 @@ Build first, then add this directory to the `plugins` array in your **global** `
 }
 ```
 
-In Desktop, open a session and select **+ → Docker Sandboxes** in the side panel, or run **Open Docker Sandboxes** from the command palette. The panel can also be dragged to a bottom pane using Desktop's normal tab controls.
+In Desktop, select **Settings → Docker Sandboxes**, or run **Open Docker Sandboxes** from the command palette. The command opens the same settings page.
 
-On a draft or another view without a mounted session, the same action opens the inventory in a dialog instead: Desktop's session panel API needs a mounted session. Narrow windows also offer Docker Sandboxes in the view switcher's **More** menu.
+This is a machine-wide settings page and does not require an open session. It replaces the former side-panel tab, **+** launcher, draft-session dialog, and narrow-screen view entry.
 
 OpenCode watches configuration changes. While developing, run:
 
@@ -73,7 +73,7 @@ Rebuilt local bundles reload automatically. **Settings → Extensions → Plugin
 
 The IPC contract ID in `src/contract.ts` is versioned. When changing bridge methods or the state schema, bump its version: Desktop 2.2.2 retains IPC clients/codecs by ID across GUI rebuilds. Reusing an old ID can leave a newly loaded panel connected through an outdated schema.
 
-Keep the side-panel launcher contribution object stable, with a getter for its reactive `opened` state. Desktop keys launcher rows by that object: returning a new item from a session/layout-dependent factory can replace the button during pointerdown, preventing the click from ever reaching `run`.
+The settings page ID is the plugin ID (`opencode-sbx-plugin`). The command uses that exact ID with `ctx.layout.settings`; the page and its search metadata are registered without mounting the inventory or starting CLI polling.
 
 The footer shows the sbx CLI and daemon versions, read once via `sbx version --format json` and reused across refreshes. It also shows whether sbx is signed in, read from the Authentication check of `sbx diagnose --format json`. Diagnostics are reused during normal polling once the network policy is initialized, and rechecked after login, lifecycle actions, and policy setup. Missing/unknown policy setup is rechecked while polling so setup completed in a terminal is detected too. Only a passing "authenticated" report counts as signed in; a failed or missing check shows "authentication unknown" rather than "signed out".
 
@@ -100,7 +100,7 @@ Desktop may inherit a different `PATH` than your terminal. Set an absolute execu
 - Lists **local** sandboxes on the machine running Desktop, even for sessions connected to a remote OpenCode server. It does not pass `--cloud`.
 - Keeps cards compact: agent and workspace details are hidden until you toggle **Info**. The expanded state is preserved across automatic refreshes while the panel stays mounted.
 - **Repair**, immediately after **Info**, re-runs `sbx run --detach --name NAME` to attempt recovery when the sandbox's MCP gateway is missing. It runs even if the sandbox is already running and also starts stopped sandboxes. It shows **Repairing…**, prevents overlapping repair/start/stop operations on the same sandbox across windows, reports failures on the card, and refreshes afterward. Unknown/transitional states, stale inventory, and missing/pending network policy setup disable Repair. It does not stop or recreate the sandbox.
-- Refreshes on opening/showing the panel, every five seconds while visible, and on **Refresh**. Polling pauses when the panel or app document is hidden.
+- Refreshes on opening the settings page, every five seconds while it is active, and on **Refresh**. Leaving the page unmounts its content and stops polling; polling also pauses while the app document is hidden.
 - All Desktop windows share a main-process snapshot. Simultaneous refresh requests share one CLI invocation.
 - Shows **Start** for stopped sandboxes and **Stop** for running ones. Start uses `sbx run --detach --name NAME` without opening an interactive agent session; Stop uses `sbx stop -- NAME` and retains the sandbox. **Stopping interrupts any active work in that sandbox.**
 - Rechecks the sandbox ID and status against a fresh listing before an action. Duplicate clicks across windows share one operation; stale clicks never toggle in the opposite direction. Unknown/transitional statuses have no action button, and stale inventories disable controls until a successful refresh.

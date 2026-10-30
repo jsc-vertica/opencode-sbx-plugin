@@ -9,7 +9,7 @@
     "dist",
     "README.md"
   ],
-  "description": "A Docker Sandboxes side panel with start/stop controls for OpenCode Desktop.",
+  "description": "A Docker Sandboxes settings page with sandbox controls for OpenCode Desktop.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jsc-vertica/opencode-sbx-plugin.git"
