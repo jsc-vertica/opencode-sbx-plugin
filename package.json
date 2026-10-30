@@ -2,6 +2,10 @@
   "name": "opencode-sbx-plugin",
   "version": "0.1.0",
   "description": "A Docker Sandboxes side panel with start/stop controls for OpenCode Desktop.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jsc-vertica/opencode-sbx-plugin.git"
+  },
   "type": "module",
   "exports": {
     "./gui-experimental": "./dist/gui-experimental.cjs"
@@ -16,7 +20,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "release:prepare": "npm run check && tsx scripts/prepare-release.ts"
   },
   "engines": {
     "node": ">=22.12.0"

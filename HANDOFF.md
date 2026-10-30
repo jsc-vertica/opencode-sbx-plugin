@@ -1,5 +1,13 @@
 # Handoff: Docker Sandboxes launcher dead in OpenCode Desktop (recurrence)
 
+## GitHub distribution (2026-10-30)
+
+- Install with `opencode plugin add github:jsc-vertica/opencode-sbx-plugin#release`; update using the same target with `opencode plugin update`.
+- `master` remains the development branch. The separate `release` branch contains only the prebuilt GUI, README, and a minimal package manifest with the same package name/GUI export, no build hooks, and no dependencies. This avoids OpenCode 2.2.2's `git dep preparation failed` error from the source branch's build hooks.
+- `npm run release:prepare` validates/builds the source and regenerates the ignored `.release/` checkout through `scripts/prepare-release.ts`. README documents publishing subsequent releases without changing the source checkout. Typecheck, all **98 tests**, and build pass.
+- Verified the exact GitHub install command with fresh HOME/XDG directories: exit 0, global config written only inside the disposable profile, and the downloaded 28,024-byte bundle exactly matches the validated build.
+- With the user's permission, the live global sandbox plugin entry was switched from the local source checkout to the GitHub release. Other settings/plugins were preserved byte-for-byte, and a local config backup was retained. `opencode plugin list` recognizes `opencode-sbx-plugin` at release commit `c69ed0b`; the live cached bundle also matches. No real sandbox lifecycle or policy command was run during installation verification.
+
 ## Follow-up: MCP gateway repair
 
 - Each card now has **Info → Repair → Start/Stop**. Repair invokes exactly `sbx run --detach --name <current-sandbox-name>`, even for running sandboxes; it also starts a stopped sandbox. No stop, reset, or recreate command is added.

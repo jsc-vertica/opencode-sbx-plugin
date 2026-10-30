@@ -10,6 +10,26 @@ A **Docker Sandboxes** side panel for OpenCode Desktop. Lists local sandboxes, t
 
 The OpenCode CLI and Desktop are separate installations: upgrading the CLI alone does not upgrade Desktop's GUI plugin host.
 
+## Install from GitHub (no build required)
+
+Install the prebuilt **release** branch using OpenCode CLI 2.2.2:
+
+```bash
+opencode plugin add github:jsc-vertica/opencode-sbx-plugin#release
+```
+
+This adds the plugin to your global OpenCode configuration. Open Desktop, then select **+ → Docker Sandboxes** or run **Open Docker Sandboxes** from the command palette. Sign-in and first-time network policy setup are offered in the panel when needed. Docker Sandboxes must already be installed separately, with `sbx` available to Desktop.
+
+The `release` branch contains the prebuilt GUI, README, and a minimal package manifest with no build scripts or dependencies. You do not need to clone the source or install Node/Vite/Electron to build it. The `master` branch is for development; do not use it as the install target because OpenCode 2.2.2's Git dependency preparation fails on its build hooks.
+
+Update the installed release with:
+
+```bash
+opencode plugin update github:jsc-vertica/opencode-sbx-plugin#release
+```
+
+If you previously configured a local checkout, remove that local path entry before switching to the GitHub package so the same plugin is not configured twice. No npm publication is required.
+
 ## Build
 
 ```bash
@@ -102,3 +122,23 @@ npm run build
 ```
 
 Tests cover JSON parsing, status classification, error reporting, process execution/cancellation, shared refreshes, retaining the last successful inventory after errors, start/stop validation, and explicit policy initialization, including nonzero diagnostic exits, post-login rechecks, existing-policy protection, locking, and CLI arguments. Lifecycle and policy tests use fake commands and do not start/stop real sandboxes or change the machine's network policy. For a live smoke test, load the plugin, open/close it, hide/show the app, switch sessions, and verify refresh behavior. Test in both light and dark themes; use a disposable sandbox to verify start/stop controls. Use an isolated test installation for the uninitialized-policy flow; do not reset a real policy just to test the picker.
+
+## Maintaining the prebuilt GitHub release
+
+`master` keeps the source and build tools; `release` keeps only the generated installable files. On a maintainer checkout, clone the existing release branch into the ignored `.release/` directory once:
+
+```bash
+git clone --branch release --single-branch https://github.com/jsc-vertica/opencode-sbx-plugin.git .release
+```
+
+For each release, use Node 24, synchronize that checkout, then validate/build and regenerate the distribution:
+
+```bash
+git -C .release pull --ff-only
+npm run release:prepare
+git -C .release add package.json README.md dist/gui-experimental.cjs
+git -C .release commit -m "release: update prebuilt Docker Sandboxes plugin"
+git -C .release push origin release
+```
+
+`release:prepare` runs typechecking, tests, and the GUI build before copying the artifact. It preserves the package name/GUI export and removes all install-time scripts and dependencies from the distribution manifest. It also copies `LICENSE` if one is added; include that file in the release commit too. Test the GitHub target in a disposable OpenCode profile before recommending a new release.
