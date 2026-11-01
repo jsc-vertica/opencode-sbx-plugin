@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import type { Diagnostics, InventoryError, NetworkPolicyPreset, NetworkPolicyStatus, Sandbox, SandboxAction, SbxVersions } from "./model"
+import type { Diagnostics, InventoryError, NetworkPolicyPreset, NetworkPolicyStatus, Sandbox, SandboxAction, SecretScope, SbxVersions, StoredSecret } from "./model"
 
 export const CLI_TIMEOUT_MS = 10_000
 export const ACTION_TIMEOUT_MS = 60_000
@@ -169,8 +169,7 @@ export function readVersions(options: ListOptions): Promise<SbxVersions> {
   return executeSbx(options, ["version", "--format", "json"]).then(parseVersions)
 }
 
-export function readDiagnostics(options: ListOptions): Promise<Diagnostics> {
-  return executeSbx(options, ["diagnose", "--format", "json"], {
+export function readDiagnostics(options: ListOptions): Promise<Diagnostics> {  return executeSbx(options, ["diagnose", "--format", "json"], {
     timeout: CLI_TIMEOUT_MS,
     failureMessage: "Could not read sbx diagnostics. Run `sbx diagnose --format json` in a terminal.",
     // diagnose can exit nonzero precisely because policy setup is required.
@@ -195,6 +194,123 @@ export async function initializeNetworkPolicy(options: ListOptions, preset: Netw
 }
 
 export const LOGIN_TIMEOUT_MS = 10 * 60_000
+
+/** Parses `sbx secret ls --format json`, keeping only the non-sensitive fields. */
+export function parseSecrets(output: string): StoredSecret[] {
+  let value: unknown
+  try {
+    value = JSON.parse(output)
+  } catch {
+    return invalidOutput()
+  }
+  if (!record(value) || !Array.isArray(value.secrets) || !Array.isArray(value.custom_secrets)) return invalidOutput()
+  const services = value.secrets.map((item: unknown) => {
+    if (!record(item) || !nonempty(item.name) || !nonempty(item.scope)) return invalidOutput()
+    return { name: item.name, scope: item.scope, type: "service" as const, placeholder: null }
+  })
+  const custom = value.custom_secrets.map((item: unknown) => {
+    if (!record(item) || !nonempty(item.scope) || !nonempty(item.placeholder)) return invalidOutput()
+    const name = record(item) && nonempty(item.env) ? item.env : item.placeholder
+    return { name, scope: item.scope, type: "custom" as const, placeholder: item.placeholder }
+  })
+  return [...services, ...custom]
+    .sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name))
+}
+
+export function listSecrets(options: ListOptions): Promise<StoredSecret[]> {
+  return executeSbx(options, ["secret", "ls", "--format", "json"]).then(parseSecrets)
+}
+
+/**
+ * Removes a secret. Service secrets are addressed by name; local custom secrets
+ * only by their generated placeholder. `--force` skips the CLI's interactive
+ * confirmation, which cannot be answered without a TTY.
+ */
+export function removeSecret(options: ListOptions, secret: StoredSecret): Promise<void> {
+  const args = secret.type === "custom" && secret.placeholder
+    ? ["secret", "rm", "--placeholder", secret.placeholder, "--force"]
+    : ["secret", "rm", secret.name, "--force", ...(secret.scope === "global" ? [] : ["--sandbox", requireSandboxName(secret.scope)])]
+  return new Promise((resolve, reject) => {
+    const child = execFile(options.executable, args, {
+      encoding: "utf8",
+      timeout: ACTION_TIMEOUT_MS,
+      maxBuffer: MAX_OUTPUT_BYTES,
+      windowsHide: true,
+      signal: options.signal,
+    }, (error, _stdout, stderr) => {
+      if (options.signal.aborted) {
+        reject(options.signal.reason ?? new Error("Secret removal cancelled"))
+        return
+      }
+      if (error) {
+        reject(commandError(error, stderr, {
+          timeout: ACTION_TIMEOUT_MS,
+          failureMessage: "Could not remove the secret. Check `sbx secret ls` in a terminal, then try again.",
+        }))
+        return
+      }
+      resolve()
+    })
+    // The CLI never reads stdin here, but close it so it cannot block on a prompt either.
+    child.stdin?.end()
+  })
+}
+
+/**
+ * Creates or updates a predefined service secret. The value goes through stdin
+ * (`--password-stdin`-style) rather than argv so it is not visible in the process list.
+ */
+export function setServiceSecret(options: ListOptions, service: string, scope: SecretScope, sandbox: string | null, value: string): Promise<void> {
+  if (!/^[a-z][a-z0-9-]*$/i.test(service)) throw new Error("Unsupported service name")
+  const args = ["secret", "set", service]
+  return writeSecret(options, args, scope, sandbox, value)
+}
+
+/** Creates or updates a custom (non-predefined) secret such as "zeldoc". */
+export function setCustomSecret(options: ListOptions, name: string, scope: SecretScope, sandbox: string | null, value: string): Promise<void> {
+  if (!/^[a-z][a-z0-9-]*$/i.test(name)) throw new Error("Unsupported secret name")
+  // `sbx secret set` accepts arbitrary service names; custom env-var secrets
+  // (set-custom) require --host and uppercase env names, so any lowercase name
+  // goes through the service path instead.
+  return writeSecret(options, ["secret", "set", name], scope, sandbox, value)
+}
+
+function writeSecret(options: ListOptions, args: string[], scope: SecretScope, sandbox: string | null, value: string): Promise<void> {
+  const withScope = scope === "sandbox"
+    ? [...args, "--sandbox", requireSandboxName(sandbox)]
+    : args
+  return new Promise((resolve, reject) => {
+    const child = execFile(options.executable, withScope, {
+      encoding: "utf8",
+      timeout: ACTION_TIMEOUT_MS,
+      maxBuffer: MAX_OUTPUT_BYTES,
+      windowsHide: true,
+      signal: options.signal,
+    }, (error, _stdout, stderr) => {
+      if (options.signal.aborted) {
+        reject(options.signal.reason ?? new Error("Secret write cancelled"))
+        return
+      }
+      if (error) {
+        reject(commandError(error, stderr, {
+          timeout: ACTION_TIMEOUT_MS,
+          failureMessage: "Could not store the secret. Check `sbx secret ls` in a terminal, then try again.",
+        }))
+        return
+      }
+      resolve()
+    })
+    // The value is passed through stdin; the CLI prompts without a TTY only if stdin is open.
+    child.stdin?.end(`${value}\n`)
+  })
+}
+
+function requireSandboxName(sandbox: string | null): string {
+  if (!sandbox || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(sandbox)) {
+    throw new Error("Choose a sandbox for this secret, or scope it globally.")
+  }
+  return sandbox
+}
 
 export interface LoginSession {
   /** Browser URL to open for device confirmation; null when the CLI output was not understood. */
