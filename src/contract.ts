@@ -4,7 +4,7 @@ import { Schema } from "effect"
 export const Sandboxes = Ipc.define({
   // Desktop caches IPC clients/codecs by ID across GUI rebuilds. Bump this version
   // whenever methods or the state schema change, so live windows cannot reuse an old contract.
-  id: "opencode-sbx-plugin.sandboxes.v8",
+  id: "opencode-sbx-plugin.sandboxes.v9",
   state: Schema.Struct({
     sandboxes: Schema.Array(Schema.Struct({
       id: Schema.String,
@@ -32,7 +32,8 @@ export const Sandboxes = Ipc.define({
     secrets: Schema.Array(Schema.Struct({
       name: Schema.String,
       scope: Schema.String,
-      type: Schema.String,
+      type: Schema.Literals(["service", "custom"]),
+      placeholder: Schema.NullOr(Schema.String),
     })),
     secretSetup: Schema.Struct({
       pending: Schema.Boolean,
@@ -59,6 +60,14 @@ export const Sandboxes = Ipc.define({
     startLogin: {},
     initializePolicy: { input: Schema.Literals(["balanced", "allow-all", "deny-all"]) },
     dismissSecretSuccess: {},
+    removeSecret: {
+      input: Schema.Struct({
+        name: Schema.String,
+        scope: Schema.String,
+        type: Schema.Literals(["service", "custom"]),
+        placeholder: Schema.NullOr(Schema.String),
+      }),
+    },
     setSecret: {
       input: Schema.Struct({
         kind: Schema.Literals(["service", "custom"]),

@@ -39,8 +39,10 @@ export type SecretScope = "global" | "sandbox"
 
 export interface StoredSecret {
   readonly scope: string
-  readonly type: string
+  readonly type: "service" | "custom"
   readonly name: string
+  /** Local custom secrets are removed by placeholder, not by name. */
+  readonly placeholder: string | null
 }
 
 export interface SecretSetup {

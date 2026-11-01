@@ -4,7 +4,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { test, type TestContext } from "node:test"
 import { statusTone } from "../src/model"
-import { ACTION_TIMEOUT_MS, changeSandbox, commandError, initializeNetworkPolicy, listSandboxes, parseDiagnostics, parseLoginOutput, parseSandboxes, parseSecrets, parseVersions, readDiagnostics, readVersions, setCustomSecret, setServiceSecret, SbxError, startLogin } from "../src/sbx"
+import { ACTION_TIMEOUT_MS, changeSandbox, commandError, initializeNetworkPolicy, listSandboxes, parseDiagnostics, parseLoginOutput, parseSandboxes, parseSecrets, parseVersions, readDiagnostics, readVersions, removeSecret, setCustomSecret, setServiceSecret, SbxError, startLogin } from "../src/sbx"
 import type { NetworkPolicyPreset } from "../src/model"
 
 const sample = {
@@ -100,14 +100,16 @@ test("parses the secret listing without trusting unexpected shapes", () => {
   const listing = JSON.stringify({
     secrets: [
       { scope: "sandbox one", type: "service", name: "github", secret: "(stored)" },
-      { scope: "global", type: "custom", name: "zeldoc", secret: "(stored)" },
       { scope: "global", name: "droid" },
+    ],
+    custom_secrets: [
+      { scope: "global", targets: ["api.zeldoc.example"], env: "ZELDOC", placeholder: "sbx-cs-ABC123", secret: "****" },
     ],
   })
   assert.deepEqual(parseSecrets(listing), [
-    { scope: "global", type: "service", name: "droid" },
-    { scope: "global", type: "custom", name: "zeldoc" },
-    { scope: "sandbox one", type: "service", name: "github" },
+    { scope: "global", type: "service", name: "droid", placeholder: null },
+    { scope: "global", type: "custom", name: "ZELDOC", placeholder: "sbx-cs-ABC123" },
+    { scope: "sandbox one", type: "service", name: "github", placeholder: null },
   ])
   assert.throws(() => parseSecrets(JSON.stringify({ secrets: "no" })), "malformed shapes must throw, not hide secrets")
   assert.throws(() => parseSecrets("not json"))
@@ -139,6 +141,21 @@ test("service and custom secrets write via stdin with the chosen scope, never vi
   assert.deepEqual(third[0], ["secret", "set-custom", "--name", "zeldoc", "--sandbox", "my-sandbox"])
   assert.throws(() => setCustomSecret({ executable, signal }, "bad name", "global", null, "x"), /Unsupported secret name/)
   assert.throws(() => setServiceSecret({ executable, signal }, "github", "sandbox", null, "x"), /Choose a sandbox/)
+})
+
+test("removal addresses service secrets by name and custom secrets by placeholder", async (t) => {
+  const { executable, recordPath } = await secretsFixture(t)
+  const signal = new AbortController().signal
+  await removeSecret({ executable, signal }, { name: "github", scope: "global", type: "service", placeholder: null })
+  const first = JSON.parse(await readFile(recordPath, "utf8"))
+  assert.deepEqual(first[0], ["secret", "rm", "github", "--force"])
+  await removeSecret({ executable, signal }, { name: "github", scope: "my-sandbox", type: "service", placeholder: null })
+  const second = JSON.parse(await readFile(recordPath, "utf8"))
+  assert.deepEqual(second[0], ["secret", "rm", "github", "--force", "--sandbox", "my-sandbox"])
+  await removeSecret({ executable, signal }, { name: "ZELDOC", scope: "global", type: "custom", placeholder: "sbx-cs-ABC123" })
+  const third = JSON.parse(await readFile(recordPath, "utf8"))
+  assert.deepEqual(third[0], ["secret", "rm", "--placeholder", "sbx-cs-ABC123", "--force"])
+  assert.ok(!JSON.stringify(third).includes("ZELDOC"), "custom removal must not pass the display name to the CLI")
 })
 
 async function fixture(t: TestContext, source: string): Promise<string> {

@@ -203,15 +203,57 @@ export function parseSecrets(output: string): StoredSecret[] {
   } catch {
     return invalidOutput()
   }
-  if (!record(value) || !Array.isArray(value.secrets)) return invalidOutput()
-  return value.secrets.map((item: unknown) => {
+  if (!record(value) || !Array.isArray(value.secrets) || !Array.isArray(value.custom_secrets)) return invalidOutput()
+  const services = value.secrets.map((item: unknown) => {
     if (!record(item) || !nonempty(item.name) || !nonempty(item.scope)) return invalidOutput()
-    return { name: item.name, scope: item.scope, type: typeof item.type === "string" && item.type ? item.type : "service" }
-  }).sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name))
+    return { name: item.name, scope: item.scope, type: "service" as const, placeholder: null }
+  })
+  const custom = value.custom_secrets.map((item: unknown) => {
+    if (!record(item) || !nonempty(item.scope) || !nonempty(item.placeholder)) return invalidOutput()
+    const name = record(item) && nonempty(item.env) ? item.env : item.placeholder
+    return { name, scope: item.scope, type: "custom" as const, placeholder: item.placeholder }
+  })
+  return [...services, ...custom]
+    .sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name))
 }
 
 export function listSecrets(options: ListOptions): Promise<StoredSecret[]> {
   return executeSbx(options, ["secret", "ls", "--format", "json"]).then(parseSecrets)
+}
+
+/**
+ * Removes a secret. Service secrets are addressed by name; local custom secrets
+ * only by their generated placeholder. `--force` skips the CLI's interactive
+ * confirmation, which cannot be answered without a TTY.
+ */
+export function removeSecret(options: ListOptions, secret: StoredSecret): Promise<void> {
+  const args = secret.type === "custom" && secret.placeholder
+    ? ["secret", "rm", "--placeholder", secret.placeholder, "--force"]
+    : ["secret", "rm", secret.name, "--force", ...(secret.scope === "global" ? [] : ["--sandbox", requireSandboxName(secret.scope)])]
+  return new Promise((resolve, reject) => {
+    const child = execFile(options.executable, args, {
+      encoding: "utf8",
+      timeout: ACTION_TIMEOUT_MS,
+      maxBuffer: MAX_OUTPUT_BYTES,
+      windowsHide: true,
+      signal: options.signal,
+    }, (error, _stdout, stderr) => {
+      if (options.signal.aborted) {
+        reject(options.signal.reason ?? new Error("Secret removal cancelled"))
+        return
+      }
+      if (error) {
+        reject(commandError(error, stderr, {
+          timeout: ACTION_TIMEOUT_MS,
+          failureMessage: "Could not remove the secret. Check `sbx secret ls` in a terminal, then try again.",
+        }))
+        return
+      }
+      resolve()
+    })
+    // The CLI never reads stdin here, but close it so it cannot block on a prompt either.
+    child.stdin?.end()
+  })
 }
 
 /**

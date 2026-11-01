@@ -3,7 +3,7 @@ import { Sandboxes } from "./contract"
 import { createInventory } from "./inventory"
 import { createSandboxActions } from "./actions"
 import { createPolicySetup } from "./policy"
-import { changeSandbox, initializeNetworkPolicy, listSandboxes, listSecrets, readDiagnostics, readVersions, setCustomSecret, setServiceSecret, startLogin } from "./sbx"
+import { changeSandbox, initializeNetworkPolicy, listSandboxes, listSecrets, readDiagnostics, readVersions, removeSecret, setCustomSecret, setServiceSecret, startLogin } from "./sbx"
 import { createSecretSetup } from "./secrets"
 
 export const main: Plugin.MainSetup = (ctx) => {
@@ -41,6 +41,7 @@ export const main: Plugin.MainSetup = (ctx) => {
       kind === "service"
         ? setServiceSecret({ executable, signal: ctx.signal }, name, scope, sandbox, value)
         : setCustomSecret({ executable, signal: ctx.signal }, name, scope, sandbox, value),
+    remove: (secret) => removeSecret({ executable, signal: ctx.signal }, secret),
     refresh: () => inventory.reload(),
     signal: ctx.signal,
     changed: () => provider.changed(),
@@ -65,6 +66,11 @@ export const main: Plugin.MainSetup = (ctx) => {
     dismissSecretSuccess: () => {
       secrets.dismissSuccess()
       inventory.setSecretSetup(secrets.state())
+    },
+    removeSecret: (input) => {
+      return secrets.remove(input).then(() => {
+        inventory.setSecretSetup(secrets.state())
+      })
     },
     startLogin: () => {
       if (login) return

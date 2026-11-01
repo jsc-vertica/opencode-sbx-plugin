@@ -124,6 +124,18 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
       if (!lifetime.signal.aborted) setPolicyRequestPending(false)
     }
   }
+  async function removeStoredSecret(secret: { name: string; scope: string; type: "service" | "custom"; placeholder: string | null }): Promise<void> {
+    if (secretBusy() || error()) return
+    setSecretRequestPending(true)
+    setSecretError(null)
+    try {
+      await client.removeSecret(secret, { signal: lifetime.signal })
+    } catch {
+      if (!lifetime.signal.aborted) setSecretError("Cannot reach Desktop to remove the secret. Refresh before retrying.")
+    } finally {
+      if (!lifetime.signal.aborted) setSecretRequestPending(false)
+    }
+  }
   const hasResult = () => state()?.updatedAt != null
   const updated = () => {
     const timestamp = state()?.updatedAt
@@ -357,16 +369,37 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
             </ui.Button>
           </div>
           <Show when={secrets().length > 0}>
-            <ul class="sbx-panel__secret-list" aria-label="Stored secrets">
-              <For each={secrets()}>
-                {(secret) => (
-                  <li>
-                    <strong>{secret.name}</strong>
-                    <span class="sbx-panel__muted"> · {secret.scope === "global" ? "global" : secret.scope}{secret.type === "custom" ? " · custom" : ""}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
+            <table class="sbx-panel__secret-table">
+              <caption class="sbx-panel__muted">Stored secrets</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Scope</th>
+                  <th scope="col">Type</th>
+                  <th scope="col"><span class="sbx-visually-hidden">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={secrets()}>
+                  {(secret) => (
+                    <tr>
+                      <td>{secret.name}</td>
+                      <td>{secret.scope === "global" ? "global" : secret.scope}</td>
+                      <td>{secret.type}</td>
+                      <td class="sbx-panel__secret-actions">
+                        <button
+                          type="button"
+                          class="sbx-panel__info"
+                          disabled={secretBusy()}
+                          aria-label={`Remove secret ${secret.name} (${secret.scope})`}
+                          onClick={() => void removeStoredSecret(secret)}
+                        >Remove</button>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
           </Show>
         </section>
       </Show>

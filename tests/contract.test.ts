@@ -5,8 +5,8 @@ import { Schema } from "effect"
 import { Sandboxes } from "../src/contract"
 
 test("lifecycle IPC uses a versioned identity distinct from the original read-only bridge", () => {
-  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v8")
-  for (const previous of ["", ".v2", ".v3", ".v4", ".v5", ".v6", ".v7"]) {
+  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v9")
+  for (const previous of ["", ".v2", ".v3", ".v4", ".v5", ".v6", ".v7", ".v8"]) {
     assert.notEqual(Sandboxes.id, `opencode-sbx-plugin.sandboxes${previous}`)
   }
 })
@@ -30,7 +30,7 @@ test("Desktop's ID-keyed client cache cannot reuse the old read-only codecs for 
   const after = client(Sandboxes)
   assert.notEqual(after, before)
   assert.deepEqual(before.methods, ["refresh"])
-  assert.deepEqual(after.methods, ["refresh", "change", "startLogin", "initializePolicy", "dismissSecretSuccess", "setSecret"])
+  assert.deepEqual(after.methods, ["refresh", "change", "startLogin", "initializePolicy", "dismissSecretSuccess", "removeSecret", "setSecret"])
   assert.equal(after.state, Sandboxes.spec.state)
 })
 

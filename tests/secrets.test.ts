@@ -10,6 +10,7 @@ test("a successful create publishes success, refreshes, and clears the value pat
     execute: async (kind, name, scope, sandbox, value) => {
       executed.push({ kind, name, scope, sandbox, value })
     },
+    remove: async () => {},
     refresh: async () => { refreshed++ },
     changed: () => { changes++ },
     signal: new AbortController().signal,
@@ -35,6 +36,7 @@ test("a create failure is reported and still refreshes; empty values are refused
       executed++
       throw new Error("boom")
     },
+    remove: async () => {},
     refresh: async () => { refreshed++ },
     changed: () => {},
     signal: new AbortController().signal,
@@ -49,6 +51,32 @@ test("a create failure is reported and still refreshes; empty values are refused
   assert.match(setup.state().error ?? "", /Enter a secret value/)
 })
 
+test("removal publishes success, refreshes, and reports failures", async () => {
+  const removed: string[] = []
+  let failing = false
+  let refreshed = 0
+  const setup = createSecretSetup({
+    execute: async () => {},
+    remove: async (secret) => {
+      if (failing) throw new Error("rm failed")
+      removed.push(secret.name)
+    },
+    refresh: async () => { refreshed++ },
+    changed: () => {},
+    signal: new AbortController().signal,
+  })
+  await setup.remove({ name: "github", scope: "global", type: "service", placeholder: null })
+  assert.deepEqual(removed, ["github"])
+  assert.equal(refreshed, 1)
+  assert.match(setup.state().success ?? "", /Removed secret "github" \(global\)/)
+  failing = true
+  await setup.remove({ name: "openai", scope: "global", type: "service", placeholder: null })
+  assert.equal(removed.length, 1)
+  assert.match(setup.state().error ?? "", /rm failed/)
+  assert.equal(setup.state().success, null)
+  assert.equal(setup.state().pending, false)
+})
+
 test("overlapping creates share one operation; shutdown blocks new ones", async () => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
@@ -59,6 +87,7 @@ test("overlapping creates share one operation; shutdown blocks new ones", async 
       executed++
       await gate
     },
+    remove: async () => {},
     refresh: async () => {},
     changed: () => {},
     signal: controller.signal,
