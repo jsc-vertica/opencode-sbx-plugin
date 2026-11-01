@@ -1,4 +1,3 @@
-import { shell } from "electron"
 import type { Plugin } from "@opencode/plugin/gui"
 import { Sandboxes } from "./contract"
 import { createInventory } from "./inventory"
@@ -47,8 +46,8 @@ export const main: Plugin.MainSetup = (ctx) => {
       login = startLogin({ executable, signal: ctx.signal })
       inventory.setLogin({ url: null, code: null })
       void login.session.then((session) => {
+        // sbx login opens the browser itself; the panel only displays the URL and code.
         inventory.setLogin(session)
-        if (session.url) shell.openExternal(session.url).catch(() => {})
       })
       void login.done.then((outcome) => {
         login = undefined
