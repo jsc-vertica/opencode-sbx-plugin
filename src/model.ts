@@ -29,6 +29,28 @@ export interface Sandbox {
 
 export type SandboxAction = "start" | "stop" | "repair"
 
+export const SECRET_SERVICES = [
+  "anthropic", "copilot", "cursor", "devin", "droid", "github", "google", "groq", "mistral", "nebius", "openai", "openrouter", "xai",
+] as const
+
+export type SecretService = (typeof SECRET_SERVICES)[number]
+
+export type SecretScope = "global" | "sandbox"
+
+export interface StoredSecret {
+  readonly scope: string
+  readonly type: string
+  readonly name: string
+}
+
+export interface SecretSetup {
+  /** Set while a create is in flight; the form stays disabled until it resolves. */
+  readonly pending: boolean
+  readonly error: string | null
+  /** Set briefly after a successful create so the UI can confirm it. */
+  readonly success: string | null
+}
+
 export interface SandboxOperation {
   readonly id: string
   readonly action: SandboxAction
@@ -67,6 +89,8 @@ export interface Inventory {
   readonly auth: AuthState | null
   readonly networkPolicy: NetworkPolicyStatus | null
   readonly login: { readonly url: string | null; readonly code: string | null } | null
+  readonly secrets: readonly StoredSecret[]
+  readonly secretSetup: SecretSetup
 }
 
 export function statusTone(status: string): "running" | "stopped" | "other" {

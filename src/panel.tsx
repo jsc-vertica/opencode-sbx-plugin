@@ -1,9 +1,11 @@
 import { usePlugin } from "@opencode/plugin/gui"
 import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, untrack } from "solid-js"
 import { Sandboxes } from "./contract"
-import { sandboxAction, statusTone, type NetworkPolicyPreset, type SandboxAction } from "./model"
+import { SECRET_SERVICES, sandboxAction, statusTone, type NetworkPolicyPreset, type SandboxAction, type SecretScope } from "./model"
 
 const REFRESH_INTERVAL_MS = 5_000
+// Predefined "zeldoc" plus the CLI's service list; the user can still type any custom name.
+const SECRET_NAME_PRESETS = ["zeldoc", ...SECRET_SERVICES] as const
 const POLICY_PRESETS: readonly { id: NetworkPolicyPreset; title: string; description: string }[] = [
   { id: "balanced", title: "Balanced (recommended)", description: "Allow common AI services, package registries, and development services; other destinations require approval." },
   { id: "allow-all", title: "Allow all", description: "Allow all outbound TCP traffic. This is the least restrictive preset." },
@@ -24,6 +26,13 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const [selectedPolicy, setSelectedPolicy] = createSignal<NetworkPolicyPreset | null>(null)
   const [policyRequestPending, setPolicyRequestPending] = createSignal(false)
   const [policyError, setPolicyError] = createSignal<string | null>(null)
+  const [secretName, setSecretName] = createSignal<string>("zeldoc")
+  const [customSecretName, setCustomSecretName] = createSignal<string>("")
+  const [secretScope, setSecretScope] = createSignal<SecretScope>("global")
+  const [secretSandbox, setSecretSandbox] = createSignal<string>("")
+  const [secretValue, setSecretValue] = createSignal<string>("")
+  const [secretRequestPending, setSecretRequestPending] = createSignal(false)
+  const [secretError, setSecretError] = createSignal<string | null>(null)
   const detailsPrefix = createUniqueId()
   let pending: Promise<void> | undefined
 
@@ -114,6 +123,43 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
     return timestamp == null ? "" : new Date(timestamp).toLocaleTimeString()
   }
 
+  const secrets = () => state()?.secrets ?? []
+  const secretSetup = () => state()?.secretSetup
+  const secretBusy = () => secretRequestPending() || secretSetup()?.pending === true
+  const secretFailure = () => secretError() ?? secretSetup()?.error
+  const secretSuccess = () => secretSetup()?.success
+  const chosenSecretName = () => secretName() === "__custom__" ? customSecretName().trim() : secretName()
+  const secretSandboxInvalid = () => secretScope() === "sandbox" && !secretSandbox().trim()
+  async function storeSecret(): Promise<void> {
+    if (secretBusy() || error()) return
+    const name = chosenSecretName()
+    const kind = secretName() === "__custom__" ? "custom" as const : SECRET_SERVICES.includes(secretName() as never) ? "service" as const : "custom" as const
+    if (!name) {
+      setSecretError("Enter a secret name.")
+      return
+    }
+    if (secretSandboxInvalid()) {
+      setSecretError("Enter the sandbox name to scope this secret to, or choose the global scope.")
+      return
+    }
+    setSecretRequestPending(true)
+    setSecretError(null)
+    try {
+      await client.setSecret({
+        kind,
+        name,
+        scope: secretScope(),
+        sandbox: secretScope() === "sandbox" ? secretSandbox().trim() : null,
+        value: secretValue(),
+      }, { signal: lifetime.signal })
+      setSecretValue("")
+    } catch {
+      if (!lifetime.signal.aborted) setSecretError("Cannot reach Desktop to store the secret. Refresh before retrying.")
+    } finally {
+      if (!lifetime.signal.aborted) setSecretRequestPending(false)
+    }
+  }
+
   return (
     <section class="sbx-panel" aria-label="Docker Sandboxes" aria-busy={busy()}>
       <header class="sbx-panel__header">
@@ -185,6 +231,116 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
 
       <Show when={!signedOut() && policyFailure()}>
         {(message) => <div class="sbx-panel__error" role="alert">{message()}</div>}
+      </Show>
+
+      <Show when={!signedOut()}>
+        <section class="sbx-panel__secrets" aria-label="Service secrets">
+          <h3>Service secrets</h3>
+          <p id={`${detailsPrefix}-secrets-help`} class="sbx-panel__muted">
+            Stored with <code>sbx secret set</code>. Values are sent to the main process only and never displayed again.
+            Global secrets apply to every sandbox; sandbox-scoped secrets apply to that sandbox alone.
+          </p>
+          <Show when={secretFailure()}>
+            {(message) => <div class="sbx-panel__error" role="alert">{message()}</div>}
+          </Show>
+          <Show when={secretSuccess()}>
+            {(message) => (
+              <div class="sbx-panel__secret-success" role="status">
+                <span>{message()}</span>
+                <button
+                  type="button"
+                  class="sbx-panel__info"
+                  aria-label="Dismiss"
+                  onClick={() => client.dismissSecretSuccess().catch(() => {})}
+                >Dismiss</button>
+              </div>
+            )}
+          </Show>
+          <div class="sbx-panel__secret-form" aria-describedby={`${detailsPrefix}-secrets-help`}>
+            <label class="sbx-panel__secret-field">
+              <span>Secret</span>
+              <select
+                value={secretName()}
+                disabled={secretBusy()}
+                onChange={(event) => setSecretName(event.currentTarget.value)}
+              >
+                {SECRET_NAME_PRESETS.map((preset) => <option value={preset}>{preset}</option>)}
+                <option value="__custom__">Custom…</option>
+              </select>
+            </label>
+            <Show when={secretName() === "__custom__"}>
+              <label class="sbx-panel__secret-field">
+                <span>Custom name</span>
+                <input
+                  type="text"
+                  value={customSecretName()}
+                  placeholder="e.g. zeldoc"
+                  disabled={secretBusy()}
+                  onInput={(event) => setCustomSecretName(event.currentTarget.value)}
+                />
+              </label>
+            </Show>
+            <label class="sbx-panel__secret-field">
+              <span>Scope</span>
+              <select
+                value={secretScope()}
+                disabled={secretBusy()}
+                onChange={(event) => setSecretScope(event.currentTarget.value as SecretScope)}
+              >
+                <option value="global">Global (all sandboxes)</option>
+                <option value="sandbox">Sandbox</option>
+              </select>
+            </label>
+            <Show when={secretScope() === "sandbox"}>
+              <label class="sbx-panel__secret-field">
+                <span>Sandbox name</span>
+                <input
+                  type="text"
+                  value={secretSandbox()}
+                  placeholder="e.g. my-sandbox"
+                  disabled={secretBusy()}
+                  onInput={(event) => setSecretSandbox(event.currentTarget.value)}
+                  list={`${detailsPrefix}-sandbox-names`}
+                />
+              </label>
+              <datalist id={`${detailsPrefix}-sandbox-names`}>
+                <For each={sandboxes()}>{(sandbox) => <option value={sandbox.name} />}</For>
+              </datalist>
+            </Show>
+            <label class="sbx-panel__secret-field">
+              <span>Value</span>
+              <input
+                type="password"
+                value={secretValue()}
+                placeholder="Secret value"
+                disabled={secretBusy()}
+                autocomplete="off"
+                onInput={(event) => setSecretValue(event.currentTarget.value)}
+              />
+            </label>
+            <ui.Button
+              size="small"
+              variant="contrast"
+              busy={secretBusy()}
+              disabled={secretBusy() || !chosenSecretName()}
+              onClick={() => void storeSecret()}
+            >
+              {secretBusy() ? "Storing…" : "Store secret"}
+            </ui.Button>
+          </div>
+          <Show when={secrets().length > 0}>
+            <ul class="sbx-panel__secret-list" aria-label="Stored secrets">
+              <For each={secrets()}>
+                {(secret) => (
+                  <li>
+                    <strong>{secret.name}</strong>
+                    <span class="sbx-panel__muted"> · {secret.scope === "global" ? "global" : secret.scope}{secret.type === "custom" ? " · custom" : ""}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </section>
       </Show>
 
       <Show when={!hasResult() && !error()}>

@@ -3,7 +3,8 @@ import { Sandboxes } from "./contract"
 import { createInventory } from "./inventory"
 import { createSandboxActions } from "./actions"
 import { createPolicySetup } from "./policy"
-import { changeSandbox, initializeNetworkPolicy, listSandboxes, readDiagnostics, readVersions, startLogin } from "./sbx"
+import { changeSandbox, initializeNetworkPolicy, listSandboxes, listSecrets, readDiagnostics, readVersions, setCustomSecret, setServiceSecret, startLogin } from "./sbx"
+import { createSecretSetup } from "./secrets"
 
 export const main: Plugin.MainSetup = (ctx) => {
   const executable = typeof ctx.options.sbxPath === "string" && ctx.options.sbxPath.trim()
@@ -14,6 +15,7 @@ export const main: Plugin.MainSetup = (ctx) => {
     load: () => listSandboxes({ executable, signal: ctx.signal }),
     versions: () => readVersions({ executable, signal: ctx.signal }),
     diagnostics: () => readDiagnostics({ executable, signal: ctx.signal }),
+    secrets: () => listSecrets({ executable, signal: ctx.signal }),
     signal: ctx.signal,
     changed: () => provider.changed(),
   })
@@ -34,6 +36,16 @@ export const main: Plugin.MainSetup = (ctx) => {
     changed: () => provider.changed(),
   })
 
+  const secrets = createSecretSetup({
+    execute: (kind, name, scope, sandbox, value) =>
+      kind === "service"
+        ? setServiceSecret({ executable, signal: ctx.signal }, name, scope, sandbox, value)
+        : setCustomSecret({ executable, signal: ctx.signal }, name, scope, sandbox, value),
+    refresh: () => inventory.reload(),
+    signal: ctx.signal,
+    changed: () => provider.changed(),
+  })
+
   // One login flow at a time; every window sees the same device code and URL.
   let login: ReturnType<typeof startLogin> | undefined
   const provider = ctx.provide(Sandboxes, {
@@ -41,6 +53,19 @@ export const main: Plugin.MainSetup = (ctx) => {
     refresh: () => inventory.refresh(),
     change: ({ id, action }) => actions.change(id, action),
     initializePolicy: (preset) => policy.initialize(preset),
+    setSecret: (input) => {
+      const setup = secrets.state()
+      if (!setup.pending && !inventory.state().secretSetup.pending) {
+        inventory.setSecretSetup({ ...setup, pending: true, error: null, success: null })
+      }
+      return secrets.create(input.kind, input.name, input.scope, input.sandbox, input.value).then(() => {
+        inventory.setSecretSetup(secrets.state())
+      })
+    },
+    dismissSecretSuccess: () => {
+      secrets.dismissSuccess()
+      inventory.setSecretSetup(secrets.state())
+    },
     startLogin: () => {
       if (login) return
       login = startLogin({ executable, signal: ctx.signal })

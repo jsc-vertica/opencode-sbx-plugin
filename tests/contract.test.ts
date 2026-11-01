@@ -5,8 +5,8 @@ import { Schema } from "effect"
 import { Sandboxes } from "../src/contract"
 
 test("lifecycle IPC uses a versioned identity distinct from the original read-only bridge", () => {
-  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v7")
-  for (const previous of ["", ".v2", ".v3", ".v4", ".v5", ".v6"]) {
+  assert.equal(Sandboxes.id, "opencode-sbx-plugin.sandboxes.v8")
+  for (const previous of ["", ".v2", ".v3", ".v4", ".v5", ".v6", ".v7"]) {
     assert.notEqual(Sandboxes.id, `opencode-sbx-plugin.sandboxes${previous}`)
   }
 })
@@ -30,7 +30,7 @@ test("Desktop's ID-keyed client cache cannot reuse the old read-only codecs for 
   const after = client(Sandboxes)
   assert.notEqual(after, before)
   assert.deepEqual(before.methods, ["refresh"])
-  assert.deepEqual(after.methods, ["refresh", "change", "startLogin", "initializePolicy"])
+  assert.deepEqual(after.methods, ["refresh", "change", "startLogin", "initializePolicy", "dismissSecretSuccess", "setSecret"])
   assert.equal(after.state, Sandboxes.spec.state)
 })
 
@@ -43,6 +43,8 @@ test("the current bridge decodes lifecycle state without dropping the new operat
     networkPolicy: "initialized",
     policySetup: { preset: null, pending: false, error: null },
     login: null,
+    secrets: [],
+    secretSetup: { pending: false, error: null, success: null },
     operations: [{ id: "one", action: "stop", pending: true, error: null }],
     updatedAt: 123,
     error: null,
@@ -67,6 +69,7 @@ test("the bridge preserves the policy-required state and setup failure", () => {
   const snapshot = {
     sandboxes: [], refreshing: false, versions: null, auth: "authenticated", login: null,
     networkPolicy: "required", policySetup: { preset: "balanced", pending: false, error: "Try again" },
+    secrets: [], secretSetup: { pending: false, error: null, success: null },
     operations: [], updatedAt: null, error: { code: "network-policy-required", message: "Choose a preset" },
   }
   assert.deepEqual(Schema.decodeUnknownSync(Sandboxes.spec.state)(snapshot), snapshot)
@@ -80,6 +83,7 @@ test("repair cannot reuse the previous IPC action codec and survives shared oper
   const snapshot = {
     sandboxes: [], refreshing: false, versions: null, auth: "authenticated", login: null,
     networkPolicy: "initialized", policySetup: { preset: null, pending: false, error: null },
+    secrets: [], secretSetup: { pending: false, error: null, success: null },
     operations: [{ ...repair, pending: true, error: null }], updatedAt: 123, error: null,
   }
   assert.deepEqual(Schema.decodeUnknownSync(Sandboxes.spec.state)(snapshot), snapshot)
