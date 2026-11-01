@@ -269,8 +269,10 @@ export function setServiceSecret(options: ListOptions, service: string, scope: S
 /** Creates or updates a custom (non-predefined) secret such as "zeldoc". */
 export function setCustomSecret(options: ListOptions, name: string, scope: SecretScope, sandbox: string | null, value: string): Promise<void> {
   if (!/^[a-z][a-z0-9-]*$/i.test(name)) throw new Error("Unsupported secret name")
-  const args = ["secret", "set-custom", "--name", name]
-  return writeSecret(options, args, scope, sandbox, value)
+  // `sbx secret set` accepts arbitrary service names; custom env-var secrets
+  // (set-custom) require --host and uppercase env names, so any lowercase name
+  // goes through the service path instead.
+  return writeSecret(options, ["secret", "set", name], scope, sandbox, value)
 }
 
 function writeSecret(options: ListOptions, args: string[], scope: SecretScope, sandbox: string | null, value: string): Promise<void> {

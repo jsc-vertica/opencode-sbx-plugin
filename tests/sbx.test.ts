@@ -138,7 +138,7 @@ test("service and custom secrets write via stdin with the chosen scope, never vi
   assert.deepEqual(second[0], ["secret", "set", "openai", "--sandbox", "my-sandbox"])
   await setCustomSecret({ executable, signal }, "zeldoc", "sandbox", "my-sandbox", "token-3")
   const third = JSON.parse(await readFile(recordPath, "utf8"))
-  assert.deepEqual(third[0], ["secret", "set-custom", "--name", "zeldoc", "--sandbox", "my-sandbox"])
+  assert.deepEqual(third[0], ["secret", "set", "zeldoc", "--sandbox", "my-sandbox"])
   assert.throws(() => setCustomSecret({ executable, signal }, "bad name", "global", null, "x"), /Unsupported secret name/)
   assert.throws(() => setServiceSecret({ executable, signal }, "github", "sandbox", null, "x"), /Choose a sandbox/)
 })
