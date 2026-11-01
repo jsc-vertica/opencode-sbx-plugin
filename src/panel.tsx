@@ -277,8 +277,7 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         <section id={`${detailsPrefix}-panel-secrets`} role="tabpanel" aria-labelledby={`${detailsPrefix}-tab-secrets`} class="sbx-panel__secrets" aria-label="Service secrets">
           <h3>Service secrets</h3>
           <p id={`${detailsPrefix}-secrets-help`} class="sbx-panel__muted">
-            Stored with <code>sbx secret set</code>. Values are sent to the main process only and never displayed again.
-            Global secrets apply to every sandbox; sandbox-scoped secrets apply to that sandbox alone.
+            Global secrets apply to every sandbox. Scoped secrets only apply to a single sandbox.
           </p>
           <Show when={secretFailure()}>
             {(message) => <div class="sbx-panel__error" role="alert">{message()}</div>}
@@ -327,7 +326,7 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
                 disabled={secretBusy()}
                 onChange={(event) => setSecretScope(event.currentTarget.value as SecretScope)}
               >
-                <option value="global">Global (all sandboxes)</option>
+                <option value="global">Global</option>
                 <option value="sandbox">Sandbox</option>
               </select>
             </label>
@@ -358,15 +357,17 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
                 onInput={(event) => setSecretValue(event.currentTarget.value)}
               />
             </label>
-            <ui.Button
-              size="small"
-              variant="contrast"
-              busy={secretBusy()}
-              disabled={secretBusy() || !chosenSecretName()}
-              onClick={() => void storeSecret()}
-            >
-              {secretBusy() ? "Storing…" : "Store secret"}
-            </ui.Button>
+            <div class="sbx-panel__secret-submit">
+              <ui.Button
+                size="small"
+                variant="contrast"
+                busy={secretBusy()}
+                disabled={secretBusy() || !chosenSecretName()}
+                onClick={() => void storeSecret()}
+              >
+                {secretBusy() ? "Saving…" : "Save"}
+              </ui.Button>
+            </div>
           </div>
           <Show when={secrets().length > 0}>
             <table class="sbx-panel__secret-table">

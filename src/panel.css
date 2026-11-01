@@ -321,6 +321,13 @@
   margin-bottom: 8px;
 }
 
+.sbx-panel__secret-submit {
+  display: flex;
+  align-items: flex-end;
+  /* Align the button with the inputs, not their labels above them. */
+  padding-bottom: 1px;
+}
+
 .sbx-panel__secret-field {
   display: flex;
   flex-direction: column;
@@ -398,7 +405,12 @@
 }
 
 .sbx-panel__secret-actions .sbx-panel__info {
-  color: #d3a33c;
+  color: #e5484d;
+}
+
+.sbx-panel__secret-actions .sbx-panel__info:hover:not(:disabled) {
+  background: color-mix(in srgb, #e5484d 14%, transparent);
+  border-color: #e5484d;
 }
 
 .sbx-panel__secret-actions .sbx-panel__info:disabled {
