@@ -318,6 +318,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
+  margin-bottom: 8px;
 }
 
 .sbx-panel__secret-field {
@@ -325,6 +326,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 140px;
+  margin-bottom: 6px;
 }
 
 .sbx-panel__secret-field span {
