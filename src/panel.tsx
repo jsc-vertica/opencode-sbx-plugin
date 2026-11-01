@@ -3,6 +3,8 @@ import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, untra
 import { Sandboxes } from "./contract"
 import { SECRET_SERVICES, sandboxAction, statusTone, type NetworkPolicyPreset, type SandboxAction, type SecretScope } from "./model"
 
+type PanelTab = "sandboxes" | "secrets"
+
 const REFRESH_INTERVAL_MS = 5_000
 // Predefined "zeldoc" plus the CLI's service list; the user can still type any custom name.
 const SECRET_NAME_PRESETS = ["zeldoc", ...SECRET_SERVICES] as const
@@ -33,6 +35,11 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
   const [secretValue, setSecretValue] = createSignal<string>("")
   const [secretRequestPending, setSecretRequestPending] = createSignal(false)
   const [secretError, setSecretError] = createSignal<string | null>(null)
+  const [activeTab, setActiveTab] = createSignal<PanelTab>("sandboxes")
+  const tabs: readonly { id: PanelTab; label: string }[] = [
+    { id: "sandboxes", label: "Sandboxes" },
+    { id: "secrets", label: "Secrets" },
+  ]
   const detailsPrefix = createUniqueId()
   let pending: Promise<void> | undefined
 
@@ -172,6 +179,27 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         </ui.Button>
       </header>
 
+      <div class="sbx-panel__tabs" role="tablist" aria-label="Docker Sandboxes sections">
+        <For each={tabs}>
+          {(tab) => (
+            <button
+              type="button"
+              role="tab"
+              id={`${detailsPrefix}-tab-${tab.id}`}
+              class="sbx-panel__tab"
+              aria-selected={activeTab() === tab.id}
+              aria-controls={`${detailsPrefix}-panel-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+              <Show when={tab.id === "secrets" && secrets().length > 0}>
+                <span class="sbx-panel__tab-count">{secrets().length}</span>
+              </Show>
+            </button>
+          )}
+        </For>
+      </div>
+
       <Show when={error()}>
         {(message) => (
           <div class="sbx-panel__error" role="alert">
@@ -199,7 +227,7 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         )}
       </Show>
 
-      <Show when={!signedOut() && (policyRequired() || policyBusy())}>
+      <Show when={!signedOut() && (policyRequired() || policyBusy()) && activeTab() === "sandboxes"}>
         <section class="sbx-panel__error" aria-label="Network policy setup">
           <h3>Choose a network policy</h3>
           <p id={`${detailsPrefix}-policy-scope`} class="sbx-panel__muted">
@@ -233,8 +261,8 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         {(message) => <div class="sbx-panel__error" role="alert">{message()}</div>}
       </Show>
 
-      <Show when={!signedOut()}>
-        <section class="sbx-panel__secrets" aria-label="Service secrets">
+      <Show when={!signedOut() && activeTab() === "secrets"}>
+        <section id={`${detailsPrefix}-panel-secrets`} role="tabpanel" aria-labelledby={`${detailsPrefix}-tab-secrets`} class="sbx-panel__secrets" aria-label="Service secrets">
           <h3>Service secrets</h3>
           <p id={`${detailsPrefix}-secrets-help`} class="sbx-panel__muted">
             Stored with <code>sbx secret set</code>. Values are sent to the main process only and never displayed again.
@@ -343,22 +371,24 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
         </section>
       </Show>
 
-      <Show when={!hasResult() && !error()}>
-        <div class="sbx-panel__empty" role="status">
-          <ui.Loader size="normal" />
-          <p>Loading sandboxes…</p>
-        </div>
-      </Show>
+      <Show when={activeTab() === "sandboxes"}>
+        <div id={`${detailsPrefix}-panel-sandboxes`} role="tabpanel" aria-labelledby={`${detailsPrefix}-tab-sandboxes`}>
+          <Show when={!hasResult() && !error()}>
+            <div class="sbx-panel__empty" role="status">
+              <ui.Loader size="normal" />
+              <p>Loading sandboxes…</p>
+            </div>
+          </Show>
 
-      <Show when={hasResult()}>
-        <Show when={sandboxes().length > 0} fallback={
-          <div class="sbx-panel__empty">
-            <ui.Icon name="cube" size="large" />
-            <h3>No local sandboxes</h3>
-            <p class="sbx-panel__muted">Create a sandbox with sbx, then refresh this panel.</p>
-          </div>
-        }>
-          <ul class="sbx-panel__list">
+          <Show when={hasResult()}>
+            <Show when={sandboxes().length > 0} fallback={
+              <div class="sbx-panel__empty">
+                <ui.Icon name="cube" size="large" />
+                <h3>No local sandboxes</h3>
+                <p class="sbx-panel__muted">Create a sandbox with sbx, then refresh this panel.</p>
+              </div>
+            }>
+              <ul class="sbx-panel__list">
             <For each={sandboxes()}>
               {(sandbox) => (
                 <li class="sbx-panel__card" aria-busy={!!pendingAction(sandbox.id)}>
@@ -436,28 +466,30 @@ export function SandboxPanel(props: { readonly visible: () => boolean }) {
                 </li>
               )}
             </For>
-          </ul>
-        </Show>
-        <footer class="sbx-panel__footer sbx-panel__muted">
-          <p>
-            Updated {updated()} · refreshes every 5s while visible
-            <Show when={state()?.auth} fallback={<span> · authentication unknown</span>}>
-              {(auth) => (
-                <span
-                  class="sbx-panel__auth"
-                  data-auth={auth()}
-                >{auth() === "authenticated" ? " · signed in" : auth() === "unauthenticated" ? " · signed out" : " · authentication unknown"}</span>
-              )}
+              </ul>
             </Show>
-          </p>
-          <Show when={state()?.versions}>
-            {(versions) => (
+            <footer class="sbx-panel__footer sbx-panel__muted">
               <p>
-                sbx {versions().client ?? "unknown"}<Show when={versions().server}> · daemon {versions().server}</Show>
+                Updated {updated()} · refreshes every 5s while visible
+                <Show when={state()?.auth} fallback={<span> · authentication unknown</span>}>
+                  {(auth) => (
+                    <span
+                      class="sbx-panel__auth"
+                      data-auth={auth()}
+                    >{auth() === "authenticated" ? " · signed in" : auth() === "unauthenticated" ? " · signed out" : " · authentication unknown"}</span>
+                  )}
+                </Show>
               </p>
-            )}
+              <Show when={state()?.versions}>
+                {(versions) => (
+                  <p>
+                    sbx {versions().client ?? "unknown"}<Show when={versions().server}> · daemon {versions().server}</Show>
+                  </p>
+                )}
+              </Show>
+            </footer>
           </Show>
-        </footer>
+        </div>
       </Show>
     </section>
   )

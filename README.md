@@ -61,7 +61,7 @@ Build first, then add this directory to the `plugins` array in your **global** `
 
 In Desktop, select **Settings → Docker Sandboxes**, or run **Open Docker Sandboxes** from the command palette. The command opens the same settings page.
 
-This is a machine-wide settings page and does not require an open session. It replaces the former side-panel tab, **+** launcher, draft-session dialog, and narrow-screen view entry.
+This is a machine-wide settings page and does not require an open session. It replaces the former side-panel tab, **+** launcher, draft-session dialog, and narrow-screen view entry. The page has two tabs: **Sandboxes** (inventory, lifecycle controls, and network policy setup) and **Secrets** (service secret creation and the stored list).
 
 OpenCode watches configuration changes. While developing, run:
 
