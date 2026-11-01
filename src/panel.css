@@ -317,15 +317,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 8px;
 }
 
 .sbx-panel__secret-submit {
   display: flex;
   align-items: flex-end;
-  /* Align the button with the inputs, not their labels above them. */
-  padding-bottom: 1px;
+  margin-bottom: 2px;
 }
 
 .sbx-panel__secret-field {
@@ -333,7 +332,6 @@
   flex-direction: column;
   gap: 4px;
   min-width: 140px;
-  margin-bottom: 6px;
 }
 
 .sbx-panel__secret-field span {
