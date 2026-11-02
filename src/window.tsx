@@ -1,4 +1,4 @@
-import { Style, type Plugin } from "@opencode/plugin/gui"
+import { Style, TitlebarItem, type Plugin } from "@opencode/plugin/gui"
 import { SandboxPanel } from "./panel"
 import { registerSandboxSettings } from "./navigation"
 import css from "./panel.css?inline"
@@ -19,6 +19,16 @@ export const setup: Plugin.Setup = (ctx) => {
       </ErrorBoundary>
     )
   }
+
+  // A titlebar pill: always visible, independent of any open session, and one
+  // click away from the Docker Sandboxes settings page.
+  ctx.add(TitlebarItem, (): TitlebarItem => ({
+    id: "settings",
+    label: "Sandboxes",
+    title: "Docker Sandboxes settings",
+    icon: "cube",
+    run: () => ctx.layout.settings(ctx.id),
+  }))
 
   ctx.add(Style, css)
   registerSandboxSettings(ctx, () => <View />)

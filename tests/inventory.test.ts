@@ -23,6 +23,7 @@ test("does not execute the CLI until a window asks for a refresh", () => {
   assert.equal(calls, 0)
   assert.deepEqual(inventory.state(), {
     sandboxes: [], refreshing: false, updatedAt: null, error: null, versions: null, auth: null, networkPolicy: null, login: null,
+    secrets: [], secretSetup: { pending: false, error: null, success: null },
   })
 })
 
@@ -45,6 +46,7 @@ test("shares concurrent refreshes between windows and publishes loading/success"
   assert.equal(changes, 2)
   assert.deepEqual(inventory.state(), {
     sandboxes: [sandbox], refreshing: false, updatedAt: 123, error: null, versions: null, auth: null, networkPolicy: null, login: null,
+    secrets: [], secretSetup: { pending: false, error: null, success: null },
   })
 })
 
@@ -63,6 +65,7 @@ test("retains the last good inventory after failure and clears errors after reco
   await inventory.refresh()
   assert.deepEqual(inventory.state(), {
     sandboxes: [sandbox], refreshing: false, updatedAt: 123, versions: null, auth: null, networkPolicy: null, login: null,
+    secrets: [], secretSetup: { pending: false, error: null, success: null },
     error: { code: "timeout", message: "Timed out" },
   })
   failing = false
@@ -206,8 +209,7 @@ test("a diagnostics failure does not fail the inventory refresh", async () => {
   assert.equal(inventory.state().error, null)
 })
 
-test("a signed-out refresh offers sign-in without pretending a login has started", async () => {
-  let signedIn = false
+test("a signed-out refresh offers sign-in without pretending a login has started", async () => {  let signedIn = false
   const inventory = createInventory({
     load: async () => {
       if (!signedIn) throw new SbxError({ code: "not-signed-in", message: "Not signed in to Docker." })
