@@ -143,3 +143,5 @@ git -C .release push origin release
 ```
 
 `release:prepare` runs typechecking, tests, and the GUI build before copying the artifact. It preserves the package name/GUI export and removes all install-time scripts and dependencies from the distribution manifest. It also copies `LICENSE` if one is added; include that file in the release commit too. Test the GitHub target in a disposable OpenCode profile before recommending a new release.
+
+`scripts/release.sh` wraps these steps: it clones or fast-forwards `.release/`, runs `npm run release:prepare` on Node 24 (through a temporary runtime when the system Node is older), commits the generated files, and pushes the `release` branch only when given `--push`. Run it from a clean `master` checkout; the release is built from the current working tree.
