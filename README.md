@@ -2,6 +2,8 @@
 
 A **Docker Sandboxes** settings page for OpenCode Desktop. Lists local sandboxes, their running/stopped status, agent, and workspaces using `sbx ls --format json`, with buttons to start, stop, and repair existing sandboxes.
 
+<img width="923" height="675" alt="image" src="https://github.com/user-attachments/assets/868f085d-655f-405f-b5ef-ea158d631ba0" />
+
 ## Requirements
 
 - **OpenCode Desktop 2.2.2** (the GUI API is experimental; this is the SDK version targeted and type-checked by this project).
